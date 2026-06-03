@@ -2,23 +2,12 @@
 
 Phase 3 学的 Prompt Engineering：
   - 系统提示词是静态的（放在最前面，可以缓存）
+  - 工具定义是独立参数（SDK 自动合并，不需要写在提示词里）
   - 用户消息是动态的（每轮变化）
-  
-oss 项目的提示词分 4 部分：
-  1. basePrompt：角色设定、能力说明
-  2. skills：工具列表
-  3. preferences：用户偏好
-  4. projectContextFiles：项目上下文
 
-我们简化版分 3 部分：
-  1. 角色设定 + 能力说明（静态）
-  2. 分析方法论（静态）
-  3. 免责声明（静态）
-
-为什么静态内容放前面？
-  - Claude API 有 Prompt Caching 机制
-  - 前缀相同的内容可以缓存，省 token 费用
-  - 如果动态内容放前面，每次都要重新计算
+对应 oss 项目的 getSystemPrompt()：
+  system_prompt = basePrompt + preferences + debugContext + projectContextFiles
+  （注意：工具定义不在这里，在 tools 参数里）
 """
 
 from ..models.state import UserContext
@@ -27,44 +16,24 @@ from ..models.state import UserContext
 def get_system_prompt(context: UserContext) -> str:
     """组装系统提示词。
     
-    对应 oss 的 getSystemPrompt()：
-      fullPrompt = basePrompt + preferences + debugContext + projectContextFiles
-    
-    我们简化为：
-      system_prompt = role + methodology + disclaimer
-    """
-    # 第 1 部分：角色设定 + 能力说明
+    注意：工具定义不在这里！
+    工具定义通过 tools 参数独立传给 API，SDK 会自动合并。
+    '''
     role = _get_role_section()
-    
-    # 第 2 部分：分析方法论
     methodology = _get_methodology_section()
-    
-    # 第 3 部分：免责声明
     disclaimer = _get_disclaimer_section()
-    
-    # 拼接（静态内容在前，方便缓存）
     return f'{role}\n\n{methodology}\n\n{disclaimer}'
 
 
 def _get_role_section() -> str:
     """角色设定：告诉模型它是谁。
     
-    为什么需要这个？
-      - 模型默认是通用助手，不知道自己是股票分析师
-      - 明确角色后，模型会用专业术语回答
-      - 对应 oss 的 getCraftAssistantPrompt() 里的 role 定义
+    注意：不包含工具说明！
+    工具说明通过 tools 参数传入，SDK 自动合并。
     """
     return '''# 角色
 
 你是一个专业的股票分析助手，帮助用户分析股票行情、技术指标、估值水平和相关新闻。
-
-## 能力
-
-你可以使用以下工具：
-- stock_quote：查询实时价格和涨跌幅
-- stock_kline：获取K线数据和技术指标（MA、RSI、MACD、布林带）
-- stock_valuation：查询估值指标（PE、PB、股息率）
-- stock_news：检索股票相关新闻
 
 ## 使用规则
 
@@ -76,13 +45,7 @@ def _get_role_section() -> str:
 
 
 def _get_methodology_section() -> str:
-    """分析方法论：告诉模型怎么分析。
-    
-    为什么需要这个？
-      - 模型可能给出泛泛而谈的回答
-      - 明确方法论后，模型会按照步骤分析
-      - 这就是"Prompt Engineering"的核心：引导模型思考
-    """
+    """分析方法论：告诉模型怎么分析。"""
     return '''# 分析方法论
 
 ## 基本面分析
@@ -104,13 +67,7 @@ def _get_methodology_section() -> str:
 
 
 def _get_disclaimer_section() -> str:
-    """免责声明：告诉模型不要做投资建议。
-    
-    为什么需要这个？
-      - 法律风险：不能给具体投资建议
-      - 明确边界：模型是分析工具，不是投资顾问
-      - 对应 PRD 里的"分析助手，非投资顾问"
-    '''
+    """免责声明：告诉模型不要做投资建议。"""
     return '''# 免责声明
 
 你是一个分析工具，不是投资顾问。
