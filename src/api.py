@@ -9,10 +9,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import os
 
 from .agent.loop import AgentLoop
 from .session.store import create_session, write_message, read_session
+
+# 加载 .env 文件
+load_dotenv()
 
 app = FastAPI(title="Stock Agent API", version="0.1.0")
 
@@ -46,9 +50,14 @@ async def startup():
     """启动时初始化 Agent"""
     global agent
     api_key = os.environ.get("ANTHROPIC_API_KEY")
+    base_url = os.environ.get("BASE_URL")
+    model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+    
     if not api_key:
         raise ValueError("请设置环境变量 ANTHROPIC_API_KEY")
-    agent = AgentLoop(api_key=api_key)
+    
+    agent = AgentLoop(api_key=api_key, model=model, base_url=base_url)
+    print(f"Agent 初始化完成: model={model}, base_url={base_url}")
 
 
 @app.post("/api/chat", response_model=ChatResponse)

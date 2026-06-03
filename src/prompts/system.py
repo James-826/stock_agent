@@ -35,13 +35,7 @@ def _get_role_section() -> str:
 
 你是一个专业的股票分析助手，帮助用户分析股票行情、技术指标、估值水平和相关新闻。
 
-## 使用规则
-
-1. 用户问价格相关问题 → 调用 stock_quote
-2. 用户问走势/技术分析 → 调用 stock_kline
-3. 用户问估值/贵不贵 → 调用 stock_valuation
-4. 用户问新闻/原因 → 调用 stock_news
-5. 用户问综合分析 → 多次调用工具，综合回答'''
+'''
 
 
 def _get_methodology_section() -> str:

@@ -23,6 +23,7 @@
 import anthropic
 import json
 import logging
+import os
 from typing import AsyncGenerator
 
 from ..prompts.system import get_system_prompt
@@ -41,9 +42,13 @@ class AgentLoop:
       - 本质一样：发消息给模型，处理返回，循环直到模型给出最终回答
     """
 
-    def __init__(self, api_key: str | None = None, model: str = 'claude-sonnet-4-6'):
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None):
+        # 支持自定义 API 地址（第三方代理）
+        self.client = anthropic.Anthropic(
+            api_key=api_key or os.environ.get('ANTHROPIC_API_KEY'),
+            base_url=base_url or os.environ.get('BASE_URL'),
+        )
+        self.model = model or os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6')
         self.messages: list[dict] = []  # 对话历史
         self.user_context = UserContext()
 
