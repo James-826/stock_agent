@@ -8,362 +8,161 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .loading { opacity: 0.5; pointer-events: none; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; margin: 0; }
+        .gradient-bg { background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); }
+        .sidebar-gradient { background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <div id="root"></div>
+<body class="h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
-        // 股票 API 配置（使用免费的 Yahoo Finance 代理）
-        const STOCK_API_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
-        
-        // 股票名称映射
-        const stockNames = {
-            'AAPL': 'Apple Inc.',
-            'NVDA': 'NVIDIA Corporation',
-            'TSLA': 'Tesla, Inc.',
-            'MSFT': 'Microsoft Corporation',
-            'GOOGL': 'Alphabet Inc.',
-            '600519.SS': '贵州茅台',
-            '000858.SZ': '五粮液',
-            '601318.SS': '中国平安',
-        };
+        const API_BASE = 'http://localhost:8000';
 
-        // 从用户输入中提取股票代码
-        function extractSymbol(input) {
-            const upperInput = input.toUpperCase();
-            
-            // 英文股票代码
-            const usSymbols = ['AAPL', 'NVDA', 'TSLA', 'MSFT', 'GOOGL', 'META', 'AMZN'];
-            for (const symbol of usSymbols) {
-                if (upperInput.includes(symbol)) {
-                    return { symbol, market: 'US' };
-                }
-            }
-            
-            // 中文股票名称映射
-            const nameMap = {
-                '英伟达': { symbol: 'NVDA', market: 'US' },
-                '特斯拉': { symbol: 'TSLA', market: 'US' },
-                '苹果': { symbol: 'AAPL', market: 'US' },
-                '微软': { symbol: 'MSFT', market: 'US' },
-                '谷歌': { symbol: 'GOOGL', market: 'US' },
-                '茅台': { symbol: '600519.SS', market: 'CN' },
-                '贵州茅台': { symbol: '600519.SS', market: 'CN' },
-                '五粮液': { symbol: '000858.SZ', market: 'CN' },
-                '平安': { symbol: '601318.SS', market: 'CN' },
-            };
-            
-            for (const [name, data] of Object.entries(nameMap)) {
-                if (input.includes(name)) {
-                    return data;
-                }
-            }
-            
-            return null;
-        }
-
-        // 获取股票数据（使用 Yahoo Finance）
-        async function fetchStockData(symbol) {
-            try {
-                const url = `${STOCK_API_BASE}/${symbol}?interval=1d&range=1mo`;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.chart.error) {
-                    throw new Error(data.chart.error.description);
-                }
-                
-                const result = data.chart.result[0];
-                const meta = result.meta;
-                const quotes = result.indicators.quote[0];
-                const timestamps = result.timestamp;
-                
-                // 计算涨跌
-                const currentPrice = meta.regularMarketPrice;
-                const previousClose = meta.previousClose || meta.chartPreviousClose;
-                const change = currentPrice - previousClose;
-                const changePct = (change / previousClose) * 100;
-                
-                // 构建 K 线数据
-                const klineData = timestamps.map((time, index) => ({
-                    date: new Date(time * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }),
-                    price: quotes.close[index],
-                })).filter(d => d.price !== null);
-                
-                return {
-                    symbol: symbol.replace('.SS', '').replace('.SZ', ''),
-                    name: stockNames[symbol] || meta.shortName || symbol,
-                    price: currentPrice,
-                    change: change,
-                    changePct: changePct,
-                    volume: meta.regularMarketVolume,
-                    marketCap: meta.marketCap,
-                    currency: meta.currency,
-                    klineData: klineData,
-                };
-            } catch (error) {
-                console.error('获取股票数据失败:', error);
-                return null;
-            }
-        }
-
-        // Header 组件
-        function Header() {
+        // 侧边栏组件
+        function Sidebar({ sessions, currentSessionId, onSelectSession, onNewSession }) {
             return (
-                <header className="gradient-bg text-white shadow-lg">
-                    <div className="container mx-auto px-4 py-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h1 className="text-xl font-bold">Stock Agent</h1>
-                                    <p className="text-white/80 text-sm">AI 股票分析助手</p>
-                                </div>
+                <div className="w-64 sidebar-gradient text-white flex flex-col h-full">
+                    {/* Logo */}
+                    <div className="p-4 border-b border-slate-700">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                </svg>
                             </div>
-                            <div className="flex items-center space-x-4">
-                                <div className="flex items-center space-x-2 text-sm">
-                                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                                    <span>实时数据</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </header>
-            );
-        }
-
-        // StockDashboard 组件
-        function StockDashboard({ stockData, isLoading, onSymbolChange }) {
-            const [activeTab, setActiveTab] = useState('quote');
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
-
-            useEffect(() => {
-                if (activeTab === 'kline' && chartRef.current && stockData?.klineData) {
-                    if (chartInstance.current) {
-                        chartInstance.current.destroy();
-                    }
-
-                    const ctx = chartRef.current.getContext('2d');
-                    chartInstance.current = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: stockData.klineData.map(d => d.date),
-                            datasets: [{
-                                label: '价格',
-                                data: stockData.klineData.map(d => d.price),
-                                borderColor: stockData.change >= 0 ? '#10b981' : '#ef4444',
-                                backgroundColor: stockData.change >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                fill: true,
-                                tension: 0.4,
-                                pointRadius: 2,
-                                pointHoverRadius: 4,
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    backgroundColor: '#1e293b',
-                                    titleColor: '#f8fafc',
-                                    bodyColor: '#f8fafc',
-                                    padding: 12,
-                                    displayColors: false,
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: false,
-                                    grid: { color: 'rgba(0,0,0,0.05)' }
-                                },
-                                x: {
-                                    grid: { display: false },
-                                    ticks: { maxTicksLimit: 10 }
-                                }
-                            }
-                        }
-                    });
-                }
-
-                return () => {
-                    if (chartInstance.current) {
-                        chartInstance.current.destroy();
-                    }
-                };
-            }, [activeTab, stockData]);
-
-            if (!stockData) {
-                return (
-                    <div className="bg-white rounded-xl card-shadow p-12 text-center animate-fade-in">
-                        <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        <p className="text-gray-500 text-lg">输入股票代码开始分析</p>
-                        <p className="text-gray-400 text-sm mt-2">支持：AAPL、NVDA、TSLA、茅台 等</p>
-                    </div>
-                );
-            }
-
-            return (
-                <div className={`bg-white rounded-xl card-shadow overflow-hidden animate-fade-in ${isLoading ? 'loading' : ''}`}>
-                    {/* 头部 */}
-                    <div className="p-6 border-b border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900">{stockData.symbol}</h2>
-                                <p className="text-gray-500">{stockData.name}</p>
+                                <h1 className="font-bold text-lg">Stock Agent</h1>
+                                <p className="text-xs text-slate-400">AI 股票分析</p>
                             </div>
-                            <div className="text-right">
-                                <div className="text-3xl font-bold text-gray-900">
-                                    {stockData.currency === 'USD' ? '$' : '¥'}{stockData.price.toFixed(2)}
-                                </div>
-                                <div className={`flex items-center justify-end space-x-2 ${stockData.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                                            d={stockData.change >= 0 ? "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
-                                    </svg>
-                                    <span className="font-medium">
-                                        {stockData.change >= 0 ? '+' : ''}{stockData.change.toFixed(2)} ({stockData.changePct.toFixed(2)}%)
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 标签页 */}
-                        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-                            {[
-                                { id: 'quote', label: '行情', icon: '💰' },
-                                { id: 'kline', label: 'K线', icon: '📊' },
-                            ].map(({ id, label, icon }) => (
-                                <button
-                                    key={id}
-                                    onClick={() => setActiveTab(id)}
-                                    className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-                                        activeTab === id
-                                            ? 'bg-white text-blue-600 shadow-sm'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <span>{icon}</span>
-                                    <span>{label}</span>
-                                </button>
-                            ))}
                         </div>
                     </div>
 
-                    {/* 内容 */}
-                    <div className="p-6">
-                        {activeTab === 'quote' && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
-                                    <p className="text-sm text-gray-500 mb-1">成交量</p>
-                                    <p className="text-xl font-bold text-gray-900">
-                                        {stockData.volume ? (stockData.volume / 1000000).toFixed(2) + 'M' : 'N/A'}
-                                    </p>
-                                </div>
-                                <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl">
-                                    <p className="text-sm text-gray-500 mb-1">市值</p>
-                                    <p className="text-xl font-bold text-gray-900">
-                                        {stockData.marketCap ? '$' + (stockData.marketCap / 1000000000).toFixed(2) + 'B' : 'N/A'}
-                                    </p>
-                                </div>
-                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl">
-                                    <p className="text-sm text-gray-500 mb-1">货币</p>
-                                    <p className="text-xl font-bold text-gray-900">{stockData.currency}</p>
-                                </div>
-                                <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-4 rounded-xl">
-                                    <p className="text-sm text-gray-500 mb-1">数据点</p>
-                                    <p className="text-xl font-bold text-gray-900">{stockData.klineData?.length || 0}</p>
-                                </div>
-                            </div>
-                        )}
+                    {/* 新建会话按钮 */}
+                    <div className="p-3">
+                        <button
+                            onClick={onNewSession}
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span>新建会话</span>
+                        </button>
+                    </div>
 
-                        {activeTab === 'kline' && (
-                            <div className="h-80">
-                                <canvas ref={chartRef}></canvas>
+                    {/* 会话列表 */}
+                    <div className="flex-1 overflow-y-auto scrollbar-thin px-2">
+                        {sessions.map(session => (
+                            <div
+                                key={session.id}
+                                onClick={() => onSelectSession(session.id)}
+                                className={`px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
+                                    session.id === currentSessionId
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                }`}
+                            >
+                                <div className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                    </svg>
+                                    <span className="text-sm truncate">{session.title || '新会话'}</span>
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1 ml-6">
+                                    {new Date(session.updated_at).toLocaleString('zh-CN', { 
+                                        month: 'short', 
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    })}
+                                </div>
                             </div>
-                        )}
+                        ))}
                     </div>
                 </div>
             );
         }
 
-        // ChatPanel 组件
-        function ChatPanel({ onSymbolChange }) {
-            const [messages, setMessages] = useState([]);
+        // 消息组件
+        function Message({ message }) {
+            const isUser = message.role === 'user';
+            
+            // 处理工具调用消息
+            if (Array.isArray(message.content)) {
+                const toolUse = message.content.find(b => b.type === 'tool_use');
+                const text = message.content.find(b => b.type === 'text');
+                
+                if (toolUse) {
+                    return (
+                        <div className="flex justify-start mb-4 animate-fade-in">
+                            <div className="bg-slate-100 rounded-xl px-4 py-3 max-w-[80%]">
+                                <div className="flex items-center space-x-2 text-sm text-slate-600">
+                                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    <span>调用工具: <strong>{toolUse.name}</strong></span>
+                                </div>
+                                {text && <p className="text-sm text-slate-700 mt-2">{text.text}</p>}
+                            </div>
+                        </div>
+                    );
+                }
+            }
+            
+            // 普通消息
+            const content = typeof message.content === 'string' ? message.content : 
+                           Array.isArray(message.content) ? message.content.map(b => b.text || '').join('') : '';
+            
+            if (!content) return null;
+
+            return (
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-fade-in`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                        isUser 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-white border border-slate-200 text-slate-900 shadow-sm'
+                    }`}>
+                        {!isUser && (
+                            <div className="flex items-center space-x-2 mb-2">
+                                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <span className="text-xs font-medium text-slate-500">Stock Agent</span>
+                            </div>
+                        )}
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 主聊天区域
+        function ChatArea({ session, onSendMessage, isLoading }) {
             const [input, setInput] = useState('');
-            const [isLoading, setIsLoading] = useState(false);
             const messagesEndRef = useRef(null);
 
             useEffect(() => {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }, [messages]);
+            }, [session?.messages]);
 
-            const handleSend = async () => {
+            const handleSend = () => {
                 if (!input.trim() || isLoading) return;
-
-                const userMessage = { role: 'user', content: input };
-                setMessages(prev => [...prev, userMessage]);
+                onSendMessage(input);
                 setInput('');
-                setIsLoading(true);
-
-                // 识别股票代码
-                const detected = extractSymbol(input);
-                if (detected) {
-                    onSymbolChange(detected.symbol);
-                    
-                    // 获取真实数据
-                    const stockData = await fetchStockData(detected.symbol);
-                    
-                    if (stockData) {
-                        const botMessage = { 
-                            role: 'assistant', 
-                            content: `📊 ${stockData.symbol}（${stockData.name}）分析报告\n\n` +
-                                     `💰 行情数据：\n` +
-                                     `• 当前价格：${stockData.currency === 'USD' ? '$' : '¥'}${stockData.price.toFixed(2)}\n` +
-                                     `• 涨跌幅：${stockData.changePct >= 0 ? '+' : ''}${stockData.changePct.toFixed(2)}%\n` +
-                                     `• 成交量：${stockData.volume ? (stockData.volume / 1000000).toFixed(2) + 'M' : 'N/A'}\n` +
-                                     `• 市值：${stockData.marketCap ? '$' + (stockData.marketCap / 1000000000).toFixed(2) + 'B' : 'N/A'}\n\n` +
-                                     `📈 技术面：\n` +
-                                     `• 近期走势：${stockData.change >= 0 ? '上涨趋势' : '下跌趋势'}\n` +
-                                     `• 数据周期：近 1 个月\n\n` +
-                                     `💡 建议：基于当前数据分析，投资有风险，需谨慎决策。`
-                        };
-                        setMessages(prev => [...prev, botMessage]);
-                    } else {
-                        const errorMessage = { 
-                            role: 'assistant', 
-                            content: `抱歉，无法获取 ${detected.symbol} 的数据。请检查股票代码是否正确。`
-                        };
-                        setMessages(prev => [...prev, errorMessage]);
-                    }
-                } else {
-                    const errorMessage = { 
-                        role: 'assistant', 
-                        content: `请输入有效的股票代码或名称，如：\n• AAPL、NVDA、TSLA\n• 英伟达、特斯拉、苹果\n• 茅台、五粮液`
-                    };
-                    setMessages(prev => [...prev, errorMessage]);
-                }
-                
-                setIsLoading(false);
             };
 
             const handleKeyPress = (e) => {
@@ -374,139 +173,191 @@
             };
 
             return (
-                <div className="bg-white rounded-xl card-shadow overflow-hidden h-[600px] flex flex-col animate-fade-in">
+                <div className="flex-1 flex flex-col bg-slate-50">
                     {/* 头部 */}
-                    <div className="p-4 gradient-bg">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                                </svg>
-                            </div>
+                    <div className="bg-white border-b border-slate-200 px-6 py-4">
+                        <div className="flex items-center justify-between">
                             <div>
-                                <h3 className="text-white font-semibold">AI 分析助手</h3>
-                                <p className="text-white/80 text-sm">实时股票分析</p>
+                                <h2 className="text-lg font-semibold text-slate-900">
+                                    {session?.title || 'Stock Agent'}
+                                </h2>
+                                <p className="text-sm text-slate-500">
+                                    {session?.messages?.length || 0} 条消息
+                                </p>
+                            </div>
+                            <div className="flex items-center space-x-2 text-sm text-slate-500">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span>已连接</span>
                             </div>
                         </div>
                     </div>
 
                     {/* 消息列表 */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                        {messages.length === 0 && (
-                            <div className="text-center text-gray-400 py-12">
-                                <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                                </svg>
-                                <p className="text-lg font-medium">开始分析股票</p>
-                                <p className="text-sm mt-2">输入股票代码或名称</p>
-                                <p className="text-xs mt-1 text-gray-300">如：查一下英伟达</p>
-                            </div>
-                        )}
-
-                        {messages.map((msg, index) => (
-                            <div
-                                key={index}
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div
-                                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                                        msg.role === 'user'
-                                            ? 'bg-blue-500 text-white'
-                                            : 'bg-gray-100 text-gray-900'
-                                    }`}
-                                >
-                                    <div className="flex items-start space-x-2">
-                                        {msg.role === 'assistant' && (
-                                            <svg className="w-4 h-4 mt-1 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                            </svg>
-                                        )}
-                                        <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
-                                        {msg.role === 'user' && (
-                                            <svg className="w-4 h-4 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="bg-gray-100 rounded-2xl px-4 py-3">
-                                    <div className="flex items-center space-x-2">
-                                        <svg className="w-4 h-4 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">
+                        {!session || session.messages.length === 0 ? (
+                            <div className="h-full flex items-center justify-center">
+                                <div className="text-center">
+                                    <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                        <svg className="w-10 h-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
-                                        <span className="text-sm text-gray-500">获取数据中...</span>
+                                    </div>
+                                    <h3 className="text-xl font-semibold text-slate-900 mb-2">开始分析股票</h3>
+                                    <p className="text-slate-500 mb-6">输入股票代码或名称，AI 会为你分析</p>
+                                    <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                                        {['NVDA 英伟达', 'AAPL 苹果', 'TSLA 特斯拉', '茅台 600519'].map((item) => (
+                                            <button
+                                                key={item}
+                                                onClick={() => onSendMessage(`帮我分析一下${item.split(' ')[0]}`)}
+                                                className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                                            >
+                                                {item}
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
+                        ) : (
+                            <>
+                                {session.messages.filter(m => m.role !== 'system').map((message, index) => (
+                                    <Message key={index} message={message} />
+                                ))}
+                                {isLoading && (
+                                    <div className="flex justify-start mb-4">
+                                        <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+                                            <div className="flex items-center space-x-2">
+                                                <div className="flex space-x-1">
+                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+                                                </div>
+                                                <span className="text-sm text-slate-500">分析中...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
-
                         <div ref={messagesEndRef} />
                     </div>
 
                     {/* 输入框 */}
-                    <div className="p-4 border-t border-gray-100">
-                        <div className="flex space-x-2">
+                    <div className="bg-white border-t border-slate-200 px-6 py-4">
+                        <div className="flex space-x-3">
                             <input
                                 type="text"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyPress={handleKeyPress}
-                                placeholder="输入股票代码或名称..."
-                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                placeholder="输入股票问题，如：NVDA 现在多少钱？"
+                                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                 disabled={isLoading}
                             />
                             <button
                                 onClick={handleSend}
                                 disabled={!input.trim() || isLoading}
-                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                 </svg>
                             </button>
                         </div>
+                        <p className="text-xs text-slate-400 mt-2">
+                            提示：支持股票代码（NVDA、AAPL）或中文名称（英伟达、苹果）
+                        </p>
                     </div>
                 </div>
             );
         }
 
-        // App 组件
+        // 主应用
         function App() {
-            const [selectedSymbol, setSelectedSymbol] = useState(null);
-            const [stockData, setStockData] = useState(null);
+            const [sessions, setSessions] = useState([]);
+            const [currentSessionId, setCurrentSessionId] = useState(null);
+            const [currentSession, setCurrentSession] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
 
-            const handleSymbolChange = useCallback(async (symbol) => {
-                setSelectedSymbol(symbol);
-                setIsLoading(true);
-                const data = await fetchStockData(symbol);
-                setStockData(data);
-                setIsLoading(false);
+            // 加载会话列表
+            const loadSessions = useCallback(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/sessions`);
+                    const data = await res.json();
+                    setSessions(data);
+                } catch (e) {
+                    console.error('加载会话失败:', e);
+                }
             }, []);
 
+            useEffect(() => {
+                loadSessions();
+            }, [loadSessions]);
+
+            // 创建新会话
+            const handleNewSession = useCallback(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
+                    const session = await res.json();
+                    setCurrentSessionId(session.id);
+                    setCurrentSession(session);
+                    loadSessions();
+                } catch (e) {
+                    console.error('创建会话失败:', e);
+                }
+            }, [loadSessions]);
+
+            // 选择会话
+            const handleSelectSession = useCallback(async (sessionId) => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`);
+                    const session = await res.json();
+                    setCurrentSessionId(sessionId);
+                    setCurrentSession(session);
+                } catch (e) {
+                    console.error('加载会话失败:', e);
+                }
+            }, []);
+
+            // 发送消息
+            const handleSendMessage = useCallback(async (message) => {
+                setIsLoading(true);
+                
+                try {
+                    const res = await fetch(`${API_BASE}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: message,
+                            session_id: currentSessionId,
+                        }),
+                    });
+
+                    const data = await res.json();
+                    
+                    // 更新当前会话
+                    setCurrentSessionId(data.session_id);
+                    handleSelectSession(data.session_id);
+                    loadSessions();
+                } catch (e) {
+                    console.error('发送消息失败:', e);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, [currentSessionId, handleSelectSession, loadSessions]);
+
             return (
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-                    <Header />
-                    <main className="container mx-auto px-4 py-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2">
-                                <StockDashboard 
-                                    stockData={stockData}
-                                    isLoading={isLoading}
-                                    onSymbolChange={handleSymbolChange}
-                                />
-                            </div>
-                            <div className="lg:col-span-1">
-                                <ChatPanel onSymbolChange={handleSymbolChange} />
-                            </div>
-                        </div>
-                    </main>
+                <div className="h-screen flex">
+                    <Sidebar
+                        sessions={sessions}
+                        currentSessionId={currentSessionId}
+                        onSelectSession={handleSelectSession}
+                        onNewSession={handleNewSession}
+                    />
+                    <ChatArea
+                        session={currentSession}
+                        onSendMessage={handleSendMessage}
+                        isLoading={isLoading}
+                    />
                 </div>
             );
         }
