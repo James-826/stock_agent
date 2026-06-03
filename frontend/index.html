@@ -1,13 +1,427 @@
 ﻿<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Stock Agent - 股票分析助手</title>
-  </head>
-  <body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Agent - AI 股票分析助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // 模拟数据
+        const mockQuote = {
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            price: 168.50,
+            change: 2.35,
+            changePct: 1.42,
+            volume: 2500000,
+            marketCap: 2800000000000,
+        };
+
+        const mockKlineData = [
+            { date: '01-01', price: 150 },
+            { date: '01-02', price: 152 },
+            { date: '01-03', price: 148 },
+            { date: '01-04', price: 155 },
+            { date: '01-05', price: 158 },
+            { date: '01-06', price: 156 },
+            { date: '01-07', price: 162 },
+            { date: '01-08', price: 165 },
+            { date: '01-09', price: 160 },
+            { date: '01-10', price: 168 },
+        ];
+
+        const mockValuation = {
+            pe: 28.5,
+            pb: 45.2,
+            dividendYield: 0.5,
+        };
+
+        const mockNews = [
+            { title: 'Apple 发布新品', source: 'Reuters', date: '2024-01-10' },
+            { title: 'iPhone 销量超预期', source: 'Bloomberg', date: '2024-01-09' },
+            { title: 'Apple 股价创新高', source: 'CNBC', date: '2024-01-08' },
+        ];
+
+        // Header 组件
+        function Header() {
+            return (
+                <header className="gradient-bg text-white shadow-lg">
+                    <div className="container mx-auto px-4 py-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold">Stock Agent</h1>
+                                    <p className="text-white/80 text-sm">AI 股票分析助手</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-2 text-sm">
+                                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                    <span>实时数据</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+            );
+        }
+
+        // StockDashboard 组件
+        function StockDashboard({ symbol, onSymbolChange }) {
+            const [activeTab, setActiveTab] = useState('quote');
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (activeTab === 'kline' && chartRef.current) {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: mockKlineData.map(d => d.date),
+                            datasets: [{
+                                label: '价格',
+                                data: mockKlineData.map(d => d.price),
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: '#1e293b',
+                                    titleColor: '#f8fafc',
+                                    bodyColor: '#f8fafc',
+                                    padding: 12,
+                                    displayColors: false,
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: false,
+                                    grid: { color: 'rgba(0,0,0,0.05)' }
+                                },
+                                x: {
+                                    grid: { display: false }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                };
+            }, [activeTab]);
+
+            return (
+                <div className="bg-white rounded-xl card-shadow overflow-hidden animate-fade-in">
+                    {/* 头部 */}
+                    <div className="p-6 border-b border-gray-100">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900">{mockQuote.symbol}</h2>
+                                <p className="text-gray-500">{mockQuote.name}</p>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-3xl font-bold text-gray-900">
+                                    ${mockQuote.price.toFixed(2)}
+                                </div>
+                                <div className={`flex items-center justify-end space-x-2 ${mockQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                                            d={mockQuote.change >= 0 ? "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
+                                    </svg>
+                                    <span className="font-medium">
+                                        {mockQuote.change >= 0 ? '+' : ''}{mockQuote.change.toFixed(2)} ({mockQuote.changePct.toFixed(2)}%)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 标签页 */}
+                        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+                            {[
+                                { id: 'quote', label: '行情', icon: '💰' },
+                                { id: 'kline', label: 'K线', icon: '📊' },
+                                { id: 'valuation', label: '估值', icon: '📈' },
+                                { id: 'news', label: '新闻', icon: '📰' },
+                            ].map(({ id, label, icon }) => (
+                                <button
+                                    key={id}
+                                    onClick={() => setActiveTab(id)}
+                                    className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+                                        activeTab === id
+                                            ? 'bg-white text-blue-600 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    <span>{icon}</span>
+                                    <span>{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 内容 */}
+                    <div className="p-6">
+                        {activeTab === 'quote' && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
+                                    <p className="text-sm text-gray-500 mb-1">成交量</p>
+                                    <p className="text-xl font-bold text-gray-900">
+                                        {(mockQuote.volume / 1000000).toFixed(2)}M
+                                    </p>
+                                </div>
+                                <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl">
+                                    <p className="text-sm text-gray-500 mb-1">市值</p>
+                                    <p className="text-xl font-bold text-gray-900">
+                                        ${(mockQuote.marketCap / 1000000000000).toFixed(2)}T
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'kline' && (
+                            <div className="h-80">
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                        )}
+
+                        {activeTab === 'valuation' && (
+                            <div className="space-y-4">
+                                {[
+                                    { label: '市盈率 (PE)', value: mockValuation.pe, color: 'blue' },
+                                    { label: '市净率 (PB)', value: mockValuation.pb, color: 'purple' },
+                                    { label: '股息率', value: `${mockValuation.dividendYield}%`, color: 'green' },
+                                ].map(({ label, value, color }) => (
+                                    <div key={label} className={`flex items-center justify-between p-4 bg-${color}-50 rounded-xl`}>
+                                        <span className="text-gray-600">{label}</span>
+                                        <span className="text-lg font-bold text-gray-900">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {activeTab === 'news' && (
+                            <div className="space-y-3">
+                                {mockNews.map((news, index) => (
+                                    <div key={index} className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer">
+                                        <h4 className="font-medium text-gray-900 mb-1">{news.title}</h4>
+                                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                                            <span>{news.source}</span>
+                                            <span>•</span>
+                                            <span>{news.date}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ChatPanel 组件
+        function ChatPanel({ selectedSymbol }) {
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const messagesEndRef = useRef(null);
+
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            const handleSend = async () => {
+                if (!input.trim() || isLoading) return;
+
+                const userMessage = { role: 'user', content: input };
+                setMessages(prev => [...prev, userMessage]);
+                setInput('');
+                setIsLoading(true);
+
+                // 模拟 API 调用
+                setTimeout(() => {
+                    const botMessage = { 
+                        role: 'assistant', 
+                        content: `关于 ${selectedSymbol} 的分析：\n\n当前价格：$${mockQuote.price}\n涨跌幅：+${mockQuote.changePct}%\n\n技术面：RSI 为 65，处于中性区间\n基本面：PE 为 ${mockValuation.pe}，估值合理\n\n建议：需要综合分析，投资有风险。` 
+                    };
+                    setMessages(prev => [...prev, botMessage]);
+                    setIsLoading(false);
+                }, 1500);
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                }
+            };
+
+            return (
+                <div className="bg-white rounded-xl card-shadow overflow-hidden h-[600px] flex flex-col animate-fade-in">
+                    {/* 头部 */}
+                    <div className="p-4 gradient-bg">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-white font-semibold">AI 分析助手</h3>
+                                <p className="text-white/80 text-sm">实时股票分析</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 消息列表 */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {messages.length === 0 && (
+                            <div className="text-center text-gray-400 py-12">
+                                <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                </svg>
+                                <p className="text-lg font-medium">开始分析 {selectedSymbol}</p>
+                                <p className="text-sm mt-2">输入你的问题，AI 会为你分析</p>
+                            </div>
+                        )}
+
+                        {messages.map((msg, index) => (
+                            <div
+                                key={index}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                                <div
+                                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                                        msg.role === 'user'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-gray-100 text-gray-900'
+                                    }`}
+                                >
+                                    <div className="flex items-start space-x-2">
+                                        {msg.role === 'assistant' && (
+                                            <svg className="w-4 h-4 mt-1 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                            </svg>
+                                        )}
+                                        <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+                                        {msg.role === 'user' && (
+                                            <svg className="w-4 h-4 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-gray-100 rounded-2xl px-4 py-3">
+                                    <div className="flex items-center space-x-2">
+                                        <svg className="w-4 h-4 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span className="text-sm text-gray-500">分析中...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div ref={messagesEndRef} />
+                    </div>
+
+                    {/* 输入框 */}
+                    <div className="p-4 border-t border-gray-100">
+                        <div className="flex space-x-2">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                                placeholder={`询问 ${selectedSymbol} 的行情...`}
+                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={isLoading}
+                            />
+                            <button
+                                onClick={handleSend}
+                                disabled={!input.trim() || isLoading}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // App 组件
+        function App() {
+            const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+                    <Header />
+                    <main className="container mx-auto px-4 py-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="lg:col-span-2">
+                                <StockDashboard 
+                                    symbol={selectedSymbol} 
+                                    onSymbolChange={setSelectedSymbol}
+                                />
+                            </div>
+                            <div className="lg:col-span-1">
+                                <ChatPanel selectedSymbol={selectedSymbol} />
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
 </html>
