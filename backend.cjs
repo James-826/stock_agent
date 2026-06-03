@@ -1,5 +1,6 @@
 ﻿const http = require('http');
 const https = require('https');
+const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,12 +30,12 @@ console.log(`Stock Agent API 启动中...`);
 console.log(`模型: ${MODEL}`);
 console.log(`API 地址: ${BASE_URL}`);
 
-// 代理配置（自动检测 Clash 端口）
-const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || 'http://127.0.0.1:7897';
-console.log(`代理地址: ${PROXY_URL}`);
+// 代理配置
+const PROXY_HOST = '127.0.0.1';
+const PROXY_PORT = 7897;
+const USE_PROXY = true;
 
-// 使用 undici 的 ProxyAgent 或者简单的代理实现
-// 由于 Node.js 原生不支持代理，我们直接用 fetch 并设置环境变量
+console.log(`代理: ${USE_PROXY ? `${PROXY_HOST}:${PROXY_PORT}` : '无'}`);
 
 // 工具定义
 const TOOL_DEFINITIONS = [
@@ -90,26 +91,25 @@ const TOOL_DEFINITIONS = [
     },
 ];
 
-// 简化的工具执行（返回模拟数据）
+// 工具执行
 function executeTool(name, params) {
     console.log(`执行工具: ${name}`, params);
     
     if (name === 'stock_quote') {
-        const prices = { 'AAPL': 168.50, 'NVDA': 520.80, 'TSLA': 245.60, '600519': 1800.00, '茅台': 1800.00 };
-        const names = { 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.', '600519': '贵州茅台', '茅台': '贵州茅台' };
-        const symbol = params.symbol || 'AAPL';
-        const upperSymbol = symbol.toUpperCase();
-        const price = prices[upperSymbol] || prices[symbol] || 100;
+        const prices = { 'AAPL': 168.50, 'NVDA': 520.80, 'TSLA': 245.60, '600519': 1800.00 };
+        const names = { 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.', '600519': '贵州茅台' };
+        const symbol = (params.symbol || 'AAPL').toUpperCase();
+        const price = prices[symbol] || 100;
         
         return JSON.stringify({
             symbol: symbol,
-            name: names[upperSymbol] || names[symbol] || symbol,
+            name: names[symbol] || symbol,
             price: price,
             change: price * 0.02,
             change_pct: 2.0,
             volume: 2500000,
             market_cap: price * 10000000000,
-            currency: symbol === '600519' || symbol === '茅台' ? 'CNY' : 'USD',
+            currency: symbol === '600519' ? 'CNY' : 'USD',
             timestamp: new Date().toISOString(),
         });
     }
@@ -146,7 +146,7 @@ function executeTool(name, params) {
         });
     }
     
-    return JSON.stringify({ error: 'UNKNOWN_TOOL', message: `未知工具: ${name}` });
+    return JSON.stringify({ error: 'UNKNOWN_TOOL' });
 }
 
 // 系统提示词
@@ -167,63 +167,152 @@ const SYSTEM_PROMPT = `# 角色
 4. 用户问新闻/原因 → 调用 stock_news
 5. 用户问综合分析 → 多次调用工具，综合回答
 
-## 分析方法论
-- PE（市盈率）：越低越便宜，但要和行业平均对比
-- PB（市净率）：PB < 1 可能被低估
-- RSI > 70 超买，< 30 超卖
-
 ## 免责声明
 你是一个分析工具，不是投资顾问。
 - 不要给出"买入"、"卖出"、"持有"等具体建议
 - 只提供数据分析和客观描述
 - 提醒用户投资有风险`;
 
-// 调用 Claude API（支持代理）
-async function callClaudeAPI(messages) {
-    const url = `${BASE_URL}/v1/messages`;
-    
-    const body = {
-        model: MODEL,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        tools: TOOL_DEFINITIONS,
-        messages: messages,
-    };
+// 通过代理调用 API
+function callClaudeAPIViaProxy(messages) {
+    return new Promise((resolve, reject) => {
+        const url = new URL(`${BASE_URL}/v1/messages`);
+        
+        const body = JSON.stringify({
+            model: MODEL,
+            max_tokens: 4096,
+            system: SYSTEM_PROMPT,
+            tools: TOOL_DEFINITIONS,
+            messages: messages,
+        });
 
-    console.log(`调用 Claude API: ${url}`);
-    console.log(`模型: ${MODEL}`);
-    console.log(`消息数: ${messages.length}`);
+        console.log(`调用 Claude API: ${url.href}`);
+        console.log(`通过代理: ${PROXY_HOST}:${PROXY_PORT}`);
 
-    // 设置代理环境变量（Node.js fetch 会使用这些）
-    const originalHttpProxy = process.env.HTTP_PROXY;
-    const originalHttpsProxy = process.env.HTTPS_PROXY;
-    
-    process.env.HTTP_PROXY = PROXY_URL;
-    process.env.HTTPS_PROXY = PROXY_URL;
+        // 先连接代理
+        const proxyReq = http.request({
+            host: PROXY_HOST,
+            port: PROXY_PORT,
+            method: 'CONNECT',
+            path: `${url.hostname}:443`,
+        });
 
-    try {
-        const response = await fetch(url, {
+        proxyReq.on('connect', (res, socket) => {
+            console.log(`代理连接成功: ${res.statusCode}`);
+            
+            if (res.statusCode !== 200) {
+                reject(new Error(`代理连接失败: ${res.statusCode}`));
+                return;
+            }
+
+            // 通过代理发送 HTTPS 请求
+            const tlsOptions = {
+                host: url.hostname,
+                socket: socket,
+                path: url.pathname,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': API_KEY,
+                    'anthropic-version': '2023-06-01',
+                    'Content-Length': Buffer.byteLength(body),
+                },
+            };
+
+            const httpsReq = https.request(tlsOptions, (httpsRes) => {
+                let data = '';
+                httpsRes.on('data', chunk => data += chunk);
+                httpsRes.on('end', () => {
+                    console.log(`API 响应: ${httpsRes.statusCode}`);
+                    
+                    if (httpsRes.statusCode !== 200) {
+                        console.error(`API 错误: ${data}`);
+                        reject(new Error(`API 请求失败: ${httpsRes.statusCode}`));
+                        return;
+                    }
+
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (e) {
+                        reject(new Error(`解析响应失败: ${e.message}`));
+                    }
+                });
+            });
+
+            httpsReq.on('error', (e) => {
+                console.error(`HTTPS 请求错误: ${e.message}`);
+                reject(e);
+            });
+
+            httpsReq.write(body);
+            httpsReq.end();
+        });
+
+        proxyReq.on('error', (e) => {
+            console.error(`代理连接错误: ${e.message}`);
+            reject(e);
+        });
+
+        proxyReq.end();
+    });
+}
+
+// 直接调用 API（不通过代理）
+function callClaudeAPIDirect(messages) {
+    return new Promise((resolve, reject) => {
+        const url = new URL(`${BASE_URL}/v1/messages`);
+        
+        const body = JSON.stringify({
+            model: MODEL,
+            max_tokens: 4096,
+            system: SYSTEM_PROMPT,
+            tools: TOOL_DEFINITIONS,
+            messages: messages,
+        });
+
+        console.log(`直接调用 Claude API: ${url.href}`);
+
+        const options = {
+            hostname: url.hostname,
+            port: 443,
+            path: url.pathname,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': API_KEY,
                 'anthropic-version': '2023-06-01',
+                'Content-Length': Buffer.byteLength(body),
             },
-            body: JSON.stringify(body),
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                console.log(`API 响应: ${res.statusCode}`);
+                
+                if (res.statusCode !== 200) {
+                    console.error(`API 错误: ${data}`);
+                    reject(new Error(`API 请求失败: ${res.statusCode}`));
+                    return;
+                }
+
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(new Error(`解析响应失败: ${e.message}`));
+                }
+            });
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`API 错误: ${response.status}`, errorText);
-            throw new Error(`API 请求失败: ${response.status} ${errorText}`);
-        }
+        req.on('error', (e) => {
+            console.error(`请求错误: ${e.message}`);
+            reject(e);
+        });
 
-        return await response.json();
-    } finally {
-        // 恢复原始代理设置
-        process.env.HTTP_PROXY = originalHttpProxy;
-        process.env.HTTPS_PROXY = originalHttpsProxy;
-    }
+        req.write(body);
+        req.end();
+    });
 }
 
 // Agent Loop
@@ -238,7 +327,15 @@ async function agentLoop(userInput, messages = []) {
         console.log(`\nAgent Loop 第 ${loopCount} 轮`);
 
         try {
-            const response = await callClaudeAPI(messages);
+            // 尝试通过代理调用，失败则直接调用
+            let response;
+            try {
+                response = await callClaudeAPIViaProxy(messages);
+            } catch (proxyError) {
+                console.log(`代理调用失败，尝试直接调用...`);
+                response = await callClaudeAPIDirect(messages);
+            }
+            
             console.log(`响应类型: ${response.stop_reason}`);
 
             let hasToolUse = false;
@@ -274,7 +371,7 @@ async function agentLoop(userInput, messages = []) {
         } catch (error) {
             console.error(`Agent Loop 错误:`, error.message);
             
-            // 如果 API 调用失败，返回一个模拟响应
+            // API 失败时返回模拟响应
             if (loopCount === 1) {
                 const fallbackResponse = generateFallbackResponse(userInput);
                 return { response: fallbackResponse, messages };
@@ -287,25 +384,34 @@ async function agentLoop(userInput, messages = []) {
     return { response: '达到最大循环次数', messages };
 }
 
-// 生成模拟响应（API 不可用时的降级方案）
+// 生成模拟响应
 function generateFallbackResponse(input) {
-    const symbolMatch = input.match(/[A-Z]{1,5}|600519|000858/i);
-    const symbol = symbolMatch ? symbolMatch[0].toUpperCase() : '未知';
-    
     const prices = { 'AAPL': 168.50, 'NVDA': 520.80, 'TSLA': 245.60, '600519': 1800.00 };
     const names = { 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.', '600519': '贵州茅台' };
     
+    let symbol = '未知';
+    for (const [key, value] of Object.entries(names)) {
+        if (input.includes(key) || input.includes(value)) {
+            symbol = key;
+            break;
+        }
+    }
+    if (symbol === '未知' && input.includes('茅台')) symbol = '600519';
+    if (symbol === '未知' && input.includes('苹果')) symbol = 'AAPL';
+    if (symbol === '未知' && input.includes('英伟达')) symbol = 'NVDA';
+    if (symbol === '未知' && input.includes('特斯拉')) symbol = 'TSLA';
+    
     if (prices[symbol]) {
-        return `📊 ${symbol}（${names[symbol]}）分析报告\n\n` +
+        return `[模拟数据 - API 连接失败]\n\n📊 ${symbol}（${names[symbol]}）分析报告\n\n` +
                `💰 行情数据：\n` +
-               `• 当前价格：$${prices[symbol].toFixed(2)}\n` +
+               `• 当前价格：${symbol === '600519' ? '¥' : '$'}${prices[symbol].toFixed(2)}\n` +
                `• 涨跌幅：+2.35%\n` +
                `• 成交量：2.5M\n\n` +
                `📈 技术指标：\n` +
                `• RSI：65（中性区间）\n` +
-               `• MA_20：$${(prices[symbol] * 0.98).toFixed(2)}\n\n` +
-               `💡 注意：当前为模拟数据，API 连接失败。\n` +
-               `请检查代理设置或 API 配置。`;
+               `• MA_20：${symbol === '600519' ? '¥' : '$'}${(prices[symbol] * 0.98).toFixed(2)}\n\n` +
+               `⚠️ 注意：当前为模拟数据\n` +
+               `API 连接失败，请检查代理或网络设置。`;
     }
     
     return `抱歉，无法识别股票代码。请使用有效的代码，如：\n• AAPL（苹果）\n• NVDA（英伟达）\n• TSLA（特斯拉）\n• 600519（茅台）`;
@@ -313,7 +419,6 @@ function generateFallbackResponse(input) {
 
 // HTTP 服务器
 const server = http.createServer(async (req, res) => {
-    // CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -326,19 +431,17 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://localhost:${PORT}`);
 
-    // 健康检查
     if (url.pathname === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
             status: 'ok', 
             model: MODEL, 
             base_url: BASE_URL,
-            proxy: PROXY_URL
+            proxy: USE_PROXY ? `${PROXY_HOST}:${PROXY_PORT}` : 'disabled'
         }));
         return;
     }
 
-    // 聊天接口
     if (url.pathname === '/api/chat' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -347,7 +450,6 @@ const server = http.createServer(async (req, res) => {
                 const { message, session_id } = JSON.parse(body);
                 console.log(`\n${'='.repeat(50)}`);
                 console.log(`收到消息: ${message}`);
-                console.log(`会话 ID: ${session_id || 'new'}`);
 
                 const { response, messages } = await agentLoop(message);
 
@@ -365,7 +467,6 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // 404
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not Found' }));
 });
@@ -373,7 +474,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
     console.log(`\n${'='.repeat(50)}`);
     console.log(`Stock Agent API 运行在 http://localhost:${PORT}/`);
-    console.log(`API 健康检查: http://localhost:${PORT}/api/health`);
-    console.log(`代理地址: ${PROXY_URL}`);
     console.log(`${'='.repeat(50)}\n`);
 });
