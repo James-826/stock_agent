@@ -24,44 +24,116 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // API 配置
-        const API_BASE = 'http://localhost:8000';
-
-        // 模拟行情数据（后续可以从 API 获取）
-        const mockQuote = {
-            symbol: 'AAPL',
-            name: 'Apple Inc.',
-            price: 168.50,
-            change: 2.35,
-            changePct: 1.42,
-            volume: 2500000,
-            marketCap: 2800000000000,
+        // 模拟数据（不同股票）
+        const mockData = {
+            'AAPL': {
+                symbol: 'AAPL',
+                name: 'Apple Inc.',
+                price: 168.50,
+                change: 2.35,
+                changePct: 1.42,
+                volume: 2500000,
+                marketCap: 2800000000000,
+                pe: 28.5,
+                pb: 45.2,
+                dividendYield: 0.5,
+                news: [
+                    { title: 'Apple 发布新品', source: 'Reuters', date: '2024-01-10' },
+                    { title: 'iPhone 销量超预期', source: 'Bloomberg', date: '2024-01-09' },
+                ],
+            },
+            'NVDA': {
+                symbol: 'NVDA',
+                name: 'NVIDIA Corporation',
+                price: 520.80,
+                change: 15.20,
+                changePct: 3.01,
+                volume: 45000000,
+                marketCap: 1300000000000,
+                pe: 65.2,
+                pb: 42.8,
+                dividendYield: 0.03,
+                news: [
+                    { title: 'NVIDIA AI 芯片需求激增', source: 'CNBC', date: '2024-01-10' },
+                    { title: 'NVIDIA 与微软达成合作', source: 'Reuters', date: '2024-01-09' },
+                ],
+            },
+            'TSLA': {
+                symbol: 'TSLA',
+                name: 'Tesla, Inc.',
+                price: 245.60,
+                change: -8.40,
+                changePct: -3.31,
+                volume: 35000000,
+                marketCap: 780000000000,
+                pe: 72.3,
+                pb: 15.6,
+                dividendYield: 0,
+                news: [
+                    { title: 'Tesla 新车型发布', source: 'Bloomberg', date: '2024-01-10' },
+                    { title: '自动驾驶技术突破', source: 'Reuters', date: '2024-01-09' },
+                ],
+            },
+            '600519': {
+                symbol: '600519',
+                name: '贵州茅台',
+                price: 1800.00,
+                change: 25.00,
+                changePct: 1.41,
+                volume: 3500000,
+                marketCap: 2300000000000,
+                pe: 32.5,
+                pb: 8.2,
+                dividendYield: 1.2,
+                news: [
+                    { title: '茅台业绩超预期', source: '证券时报', date: '2024-01-10' },
+                    { title: '白酒板块集体上涨', source: '东方财富', date: '2024-01-09' },
+                ],
+            },
         };
 
-        const mockKlineData = [
-            { date: '01-01', price: 150 },
-            { date: '01-02', price: 152 },
-            { date: '01-03', price: 148 },
-            { date: '01-04', price: 155 },
-            { date: '01-05', price: 158 },
-            { date: '01-06', price: 156 },
-            { date: '01-07', price: 162 },
-            { date: '01-08', price: 165 },
-            { date: '01-09', price: 160 },
-            { date: '01-10', price: 168 },
-        ];
+        // K 线数据生成器
+        function generateKlineData(basePrice, volatility = 0.02) {
+            const data = [];
+            let price = basePrice;
+            for (let i = 1; i <= 10; i++) {
+                price = price * (1 + (Math.random() - 0.5) * volatility);
+                data.push({
+                    date: `01-${String(i).padStart(2, '0')}`,
+                    price: Math.round(price * 100) / 100,
+                });
+            }
+            return data;
+        }
 
-        const mockValuation = {
-            pe: 28.5,
-            pb: 45.2,
-            dividendYield: 0.5,
-        };
-
-        const mockNews = [
-            { title: 'Apple 发布新品', source: 'Reuters', date: '2024-01-10' },
-            { title: 'iPhone 销量超预期', source: 'Bloomberg', date: '2024-01-09' },
-            { title: 'Apple 股价创新高', source: 'CNBC', date: '2024-01-08' },
-        ];
+        // 从用户输入中提取股票代码
+        function extractSymbol(input) {
+            const upperInput = input.toUpperCase();
+            
+            // 检查是否包含已知股票代码
+            for (const symbol of Object.keys(mockData)) {
+                if (upperInput.includes(symbol)) {
+                    return symbol;
+                }
+            }
+            
+            // 中文股票名称映射
+            const nameMap = {
+                '英伟达': 'NVDA',
+                '特斯拉': 'TSLA',
+                '苹果': 'AAPL',
+                '茅台': '600519',
+                '贵州茅台': '600519',
+            };
+            
+            for (const [name, symbol] of Object.entries(nameMap)) {
+                if (input.includes(name)) {
+                    return symbol;
+                }
+            }
+            
+            return null;
+        }
 
         // Header 组件
         function Header() {
@@ -98,6 +170,9 @@
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
+            const stockData = mockData[symbol] || mockData['AAPL'];
+            const klineData = generateKlineData(stockData.price);
+
             useEffect(() => {
                 if (activeTab === 'kline' && chartRef.current) {
                     if (chartInstance.current) {
@@ -108,12 +183,12 @@
                     chartInstance.current = new Chart(ctx, {
                         type: 'line',
                         data: {
-                            labels: mockKlineData.map(d => d.date),
+                            labels: klineData.map(d => d.date),
                             datasets: [{
                                 label: '价格',
-                                data: mockKlineData.map(d => d.price),
-                                borderColor: '#3b82f6',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                data: klineData.map(d => d.price),
+                                borderColor: stockData.change >= 0 ? '#10b981' : '#ef4444',
+                                backgroundColor: stockData.change >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                                 fill: true,
                                 tension: 0.4,
                                 pointRadius: 4,
@@ -151,7 +226,7 @@
                         chartInstance.current.destroy();
                     }
                 };
-            }, [activeTab]);
+            }, [activeTab, symbol]);
 
             return (
                 <div className="bg-white rounded-xl card-shadow overflow-hidden animate-fade-in">
@@ -159,20 +234,20 @@
                     <div className="p-6 border-b border-gray-100">
                         <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900">{mockQuote.symbol}</h2>
-                                <p className="text-gray-500">{mockQuote.name}</p>
+                                <h2 className="text-2xl font-bold text-gray-900">{stockData.symbol}</h2>
+                                <p className="text-gray-500">{stockData.name}</p>
                             </div>
                             <div className="text-right">
                                 <div className="text-3xl font-bold text-gray-900">
-                                    ${mockQuote.price.toFixed(2)}
+                                    ${stockData.price.toFixed(2)}
                                 </div>
-                                <div className={`flex items-center justify-end space-x-2 ${mockQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                <div className={`flex items-center justify-end space-x-2 ${stockData.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                                            d={mockQuote.change >= 0 ? "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
+                                            d={stockData.change >= 0 ? "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
                                     </svg>
                                     <span className="font-medium">
-                                        {mockQuote.change >= 0 ? '+' : ''}{mockQuote.change.toFixed(2)} ({mockQuote.changePct.toFixed(2)}%)
+                                        {stockData.change >= 0 ? '+' : ''}{stockData.change.toFixed(2)} ({stockData.changePct.toFixed(2)}%)
                                     </span>
                                 </div>
                             </div>
@@ -209,13 +284,13 @@
                                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
                                     <p className="text-sm text-gray-500 mb-1">成交量</p>
                                     <p className="text-xl font-bold text-gray-900">
-                                        {(mockQuote.volume / 1000000).toFixed(2)}M
+                                        {(stockData.volume / 1000000).toFixed(2)}M
                                     </p>
                                 </div>
                                 <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl">
                                     <p className="text-sm text-gray-500 mb-1">市值</p>
                                     <p className="text-xl font-bold text-gray-900">
-                                        ${(mockQuote.marketCap / 1000000000000).toFixed(2)}T
+                                        ${(stockData.marketCap / 1000000000000).toFixed(2)}T
                                     </p>
                                 </div>
                             </div>
@@ -230,9 +305,9 @@
                         {activeTab === 'valuation' && (
                             <div className="space-y-4">
                                 {[
-                                    { label: '市盈率 (PE)', value: mockValuation.pe, color: 'blue' },
-                                    { label: '市净率 (PB)', value: mockValuation.pb, color: 'purple' },
-                                    { label: '股息率', value: `${mockValuation.dividendYield}%`, color: 'green' },
+                                    { label: '市盈率 (PE)', value: stockData.pe, color: 'blue' },
+                                    { label: '市净率 (PB)', value: stockData.pb, color: 'purple' },
+                                    { label: '股息率', value: `${stockData.dividendYield}%`, color: 'green' },
                                 ].map(({ label, value, color }) => (
                                     <div key={label} className={`flex items-center justify-between p-4 bg-${color}-50 rounded-xl`}>
                                         <span className="text-gray-600">{label}</span>
@@ -244,7 +319,7 @@
 
                         {activeTab === 'news' && (
                             <div className="space-y-3">
-                                {mockNews.map((news, index) => (
+                                {stockData.news.map((news, index) => (
                                     <div key={index} className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer">
                                         <h4 className="font-medium text-gray-900 mb-1">{news.title}</h4>
                                         <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -261,12 +336,11 @@
             );
         }
 
-        // ChatPanel 组件 - 现在调用真实 API
-        function ChatPanel({ selectedSymbol }) {
+        // ChatPanel 组件 - 智能识别股票代码
+        function ChatPanel({ selectedSymbol, onSymbolChange }) {
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
             const [isLoading, setIsLoading] = useState(false);
-            const [sessionId, setSessionId] = useState(null);
             const messagesEndRef = useRef(null);
 
             useEffect(() => {
@@ -281,44 +355,24 @@
                 setInput('');
                 setIsLoading(true);
 
-                try {
-                    // 调用后端 API
-                    const response = await fetch(`${API_BASE}/api/chat`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            message: input,
-                            session_id: sessionId,
-                        }),
-                    });
+                // 识别股票代码
+                const detectedSymbol = extractSymbol(input);
+                if (detectedSymbol) {
+                    onSymbolChange(detectedSymbol);
+                }
 
-                    if (!response.ok) {
-                        throw new Error('API 请求失败');
-                    }
+                const targetSymbol = detectedSymbol || selectedSymbol;
+                const stockData = mockData[targetSymbol] || mockData['AAPL'];
 
-                    const data = await response.json();
-                    
-                    // 保存 session_id
-                    if (data.session_id) {
-                        setSessionId(data.session_id);
-                    }
-
-                    // 添加 Agent 回答
-                    const botMessage = { role: 'assistant', content: data.response };
-                    setMessages(prev => [...prev, botMessage]);
-                } catch (error) {
-                    console.error('API 错误:', error);
-                    // 如果 API 不可用，使用模拟数据
+                // 模拟 AI 分析
+                setTimeout(() => {
                     const botMessage = { 
                         role: 'assistant', 
-                        content: `关于 ${selectedSymbol} 的分析：\n\n当前价格：$${mockQuote.price}\n涨跌幅：+${mockQuote.changePct}%\n\n技术面：RSI 为 65，处于中性区间\n基本面：PE 为 ${mockValuation.pe}，估值合理\n\n建议：需要综合分析，投资有风险。` 
+                        content: `关于 ${stockData.symbol}（${stockData.name}）的分析：\n\n📊 行情数据：\n- 当前价格：$${stockData.price}\n- 涨跌幅：${stockData.changePct >= 0 ? '+' : ''}${stockData.changePct}%\n- 成交量：${(stockData.volume / 1000000).toFixed(2)}M\n- 市值：$${(stockData.marketCap / 1000000000000).toFixed(2)}T\n\n📈 技术指标：\n- RSI：${Math.floor(Math.random() * 40) + 40}（中性区间）\n- MA_20：$${(stockData.price * 0.98).toFixed(2)}\n- MACD：${stockData.change >= 0 ? '金叉' : '死叉'}\n\n💰 估值指标：\n- PE：${stockData.pe}\n- PB：${stockData.pb}\n- 股息率：${stockData.dividendYield}%\n\n📰 最新新闻：\n- ${stockData.news[0].title}\n- ${stockData.news[1].title}\n\n💡 建议：需要综合分析，投资有风险。` 
                     };
                     setMessages(prev => [...prev, botMessage]);
-                } finally {
                     setIsLoading(false);
-                }
+                }, 1500);
             };
 
             const handleKeyPress = (e) => {
@@ -352,8 +406,8 @@
                                 <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                                 </svg>
-                                <p className="text-lg font-medium">开始分析 {selectedSymbol}</p>
-                                <p className="text-sm mt-2">输入你的问题，AI 会为你分析</p>
+                                <p className="text-lg font-medium">开始分析股票</p>
+                                <p className="text-sm mt-2">输入股票代码或名称，如 "查一下英伟达"</p>
                             </div>
                         )}
 
@@ -411,7 +465,7 @@
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyPress={handleKeyPress}
-                                placeholder={`询问 ${selectedSymbol} 的行情...`}
+                                placeholder={`询问股票行情，如 "查一下英伟达"`}
                                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 disabled={isLoading}
                             />
@@ -446,7 +500,10 @@
                                 />
                             </div>
                             <div className="lg:col-span-1">
-                                <ChatPanel selectedSymbol={selectedSymbol} />
+                                <ChatPanel 
+                                  selectedSymbol={selectedSymbol}
+                                  onSymbolChange={setSelectedSymbol}
+                                />
                             </div>
                         </div>
                     </main>
