@@ -91,58 +91,164 @@ const TOOL_DEFINITIONS = [
     },
 ];
 
-// 工具执行
-function executeTool(name, params) {
+// 通过代理获取雅虎财经数据
+function fetchYahooFinance(symbol, proxy = true) {
+    return new Promise((resolve, reject) => {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1mo`;
+        const parsedUrl = new URL(url);
+        
+        console.log(`获取雅虎财经数据: ${symbol}`);
+        
+        const makeRequest = (socket) => {
+            const options = {
+                host: parsedUrl.hostname,
+                path: parsedUrl.pathname + parsedUrl.search,
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                },
+            };
+            
+            if (socket) {
+                options.socket = socket;
+            }
+            
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        if (json.chart && json.chart.result) {
+                            resolve(json.chart.result[0]);
+                        } else {
+                            reject(new Error('数据格式错误'));
+                        }
+                    } catch (e) {
+                        reject(new Error(`解析失败: ${e.message}`));
+                    }
+                });
+            });
+            
+            req.on('error', reject);
+            req.end();
+        };
+        
+        if (proxy) {
+            // 通过代理连接
+            const proxyReq = http.request({
+                host: PROXY_HOST,
+                port: PROXY_PORT,
+                method: 'CONNECT',
+                path: `${parsedUrl.hostname}:443`,
+            });
+            
+            proxyReq.on('connect', (res, socket) => {
+                if (res.statusCode === 200) {
+                    makeRequest(socket);
+                } else {
+                    reject(new Error(`代理连接失败: ${res.statusCode}`));
+                }
+            });
+            
+            proxyReq.on('error', reject);
+            proxyReq.end();
+        } else {
+            makeRequest(null);
+        }
+    });
+}
+
+// 转换股票代码为雅虎财经格式
+function normalizeSymbol(symbol, market) {
+    if (market === 'CN') {
+        const code = symbol.replace(/\D/g, '');
+        if (code.startsWith('6')) return `${code}.SS`;
+        if (code.startsWith('0') || code.startsWith('3')) return `${code}.SZ`;
+    }
+    if (market === 'HK') return `${symbol}.HK`;
+    return symbol.toUpperCase();
+}
+
+// 工具执行 - 从雅虎财经获取真实数据
+async function executeTool(name, params) {
     console.log(`执行工具: ${name}`, params);
     
-    if (name === 'stock_quote') {
-        const prices = { 'AAPL': 168.50, 'NVDA': 520.80, 'TSLA': 245.60, '600519': 1800.00 };
-        const names = { 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.', '600519': '贵州茅台' };
-        const symbol = (params.symbol || 'AAPL').toUpperCase();
-        const price = prices[symbol] || 100;
+    try {
+        if (name === 'stock_quote') {
+            const symbol = normalizeSymbol(params.symbol || 'AAPL', params.market || 'US');
+            const data = await fetchYahooFinance(symbol);
+            const meta = data.meta;
+            const currentPrice = meta.regularMarketPrice;
+            const previousClose = meta.previousClose || meta.chartPreviousClose;
+            const change = currentPrice - previousClose;
+            const changePct = (change / previousClose) * 100;
+            
+            return JSON.stringify({
+                symbol: params.symbol,
+                name: meta.shortName || meta.symbol || params.symbol,
+                price: currentPrice,
+                change: Math.round(change * 100) / 100,
+                change_pct: Math.round(changePct * 100) / 100,
+                volume: meta.regularMarketVolume,
+                market_cap: meta.marketCap || null,
+                currency: meta.currency || 'USD',
+                timestamp: new Date().toISOString(),
+            });
+        }
         
+        if (name === 'stock_kline') {
+            const symbol = normalizeSymbol(params.symbol || 'AAPL', params.market || 'US');
+            const data = await fetchYahooFinance(symbol);
+            const quotes = data.indicators.quote[0];
+            const timestamps = data.timestamp;
+            
+            const klineData = timestamps.map((time, index) => ({
+                date: new Date(time * 1000).toISOString().split('T')[0],
+                close: quotes.close[index],
+            })).filter(d => d.close !== null);
+            
+            return JSON.stringify({
+                symbol: params.symbol,
+                data_points: klineData.length,
+                dates: klineData.map(d => d.date),
+                close: klineData.map(d => d.close),
+                indicators: {},
+            });
+        }
+        
+        if (name === 'stock_valuation') {
+            const symbol = normalizeSymbol(params.symbol || 'AAPL', params.market || 'US');
+            const data = await fetchYahooFinance(symbol);
+            const meta = data.meta;
+            
+            return JSON.stringify({
+                symbol: params.symbol,
+                pe_ttm: meta.trailingPE || null,
+                pe_forward: meta.forwardPE || null,
+                pb: meta.priceToBook || null,
+                dividend_yield: meta.dividendYield || null,
+                currency: meta.currency || 'USD',
+            });
+        }
+        
+        if (name === 'stock_news') {
+            // 雅虎财经新闻 API
+            const symbol = normalizeSymbol(params.symbol || 'AAPL', params.market || 'US');
+            const newsUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${symbol}&newsCount=${params.limit || 5}`;
+            
+            // 简化处理：返回空新闻
+            return JSON.stringify({
+                symbol: params.symbol,
+                news: [],
+                total_count: 0,
+            });
+        }
+    } catch (error) {
+        console.error(`工具执行错误: ${error.message}`);
         return JSON.stringify({
-            symbol: symbol,
-            name: names[symbol] || symbol,
-            price: price,
-            change: price * 0.02,
-            change_pct: 2.0,
-            volume: 2500000,
-            market_cap: price * 10000000000,
-            currency: symbol === '600519' ? 'CNY' : 'USD',
-            timestamp: new Date().toISOString(),
-        });
-    }
-    
-    if (name === 'stock_kline') {
-        return JSON.stringify({
-            symbol: params.symbol,
-            data_points: 30,
-            dates: Array.from({length: 30}, (_, i) => `2024-01-${String(i+1).padStart(2, '0')}`),
-            close: Array.from({length: 30}, (_, i) => 150 + Math.sin(i * 0.3) * 20),
-            indicators: { MA_5: [152, 154, 153, 155, 156], RSI_14: [55, 58, 62, 60, 57] },
-        });
-    }
-    
-    if (name === 'stock_valuation') {
-        return JSON.stringify({
-            symbol: params.symbol,
-            pe_ttm: 28.5,
-            pe_forward: 25.2,
-            pb: 45.2,
-            dividend_yield: 0.005,
-            currency: 'USD',
-        });
-    }
-    
-    if (name === 'stock_news') {
-        return JSON.stringify({
-            symbol: params.symbol,
-            news: [
-                { title: '公司业绩超预期', source: 'Reuters', date: '2024-01-10', summary: '本季度营收增长20%' },
-                { title: '行业前景看好', source: 'Bloomberg', date: '2024-01-09', summary: '分析师上调目标价' },
-            ],
-            total_count: 2,
+            error: 'DATA_UNAVAILABLE',
+            message: `无法获取数据: ${error.message}`,
         });
     }
     
@@ -173,7 +279,7 @@ const SYSTEM_PROMPT = `# 角色
 - 只提供数据分析和客观描述
 - 提醒用户投资有风险`;
 
-// 通过代理调用 API
+// 通过代理调用 Claude API
 function callClaudeAPIViaProxy(messages) {
     return new Promise((resolve, reject) => {
         const url = new URL(`${BASE_URL}/v1/messages`);
@@ -187,9 +293,7 @@ function callClaudeAPIViaProxy(messages) {
         });
 
         console.log(`调用 Claude API: ${url.href}`);
-        console.log(`通过代理: ${PROXY_HOST}:${PROXY_PORT}`);
 
-        // 先连接代理
         const proxyReq = http.request({
             host: PROXY_HOST,
             port: PROXY_PORT,
@@ -198,14 +302,11 @@ function callClaudeAPIViaProxy(messages) {
         });
 
         proxyReq.on('connect', (res, socket) => {
-            console.log(`代理连接成功: ${res.statusCode}`);
-            
             if (res.statusCode !== 200) {
                 reject(new Error(`代理连接失败: ${res.statusCode}`));
                 return;
             }
 
-            // 通过代理发送 HTTPS 请求
             const tlsOptions = {
                 host: url.hostname,
                 socket: socket,
@@ -239,79 +340,13 @@ function callClaudeAPIViaProxy(messages) {
                 });
             });
 
-            httpsReq.on('error', (e) => {
-                console.error(`HTTPS 请求错误: ${e.message}`);
-                reject(e);
-            });
-
+            httpsReq.on('error', reject);
             httpsReq.write(body);
             httpsReq.end();
         });
 
-        proxyReq.on('error', (e) => {
-            console.error(`代理连接错误: ${e.message}`);
-            reject(e);
-        });
-
+        proxyReq.on('error', reject);
         proxyReq.end();
-    });
-}
-
-// 直接调用 API（不通过代理）
-function callClaudeAPIDirect(messages) {
-    return new Promise((resolve, reject) => {
-        const url = new URL(`${BASE_URL}/v1/messages`);
-        
-        const body = JSON.stringify({
-            model: MODEL,
-            max_tokens: 4096,
-            system: SYSTEM_PROMPT,
-            tools: TOOL_DEFINITIONS,
-            messages: messages,
-        });
-
-        console.log(`直接调用 Claude API: ${url.href}`);
-
-        const options = {
-            hostname: url.hostname,
-            port: 443,
-            path: url.pathname,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': API_KEY,
-                'anthropic-version': '2023-06-01',
-                'Content-Length': Buffer.byteLength(body),
-            },
-        };
-
-        const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                console.log(`API 响应: ${res.statusCode}`);
-                
-                if (res.statusCode !== 200) {
-                    console.error(`API 错误: ${data}`);
-                    reject(new Error(`API 请求失败: ${res.statusCode}`));
-                    return;
-                }
-
-                try {
-                    resolve(JSON.parse(data));
-                } catch (e) {
-                    reject(new Error(`解析响应失败: ${e.message}`));
-                }
-            });
-        });
-
-        req.on('error', (e) => {
-            console.error(`请求错误: ${e.message}`);
-            reject(e);
-        });
-
-        req.write(body);
-        req.end();
     });
 }
 
@@ -327,15 +362,7 @@ async function agentLoop(userInput, messages = []) {
         console.log(`\nAgent Loop 第 ${loopCount} 轮`);
 
         try {
-            // 尝试通过代理调用，失败则直接调用
-            let response;
-            try {
-                response = await callClaudeAPIViaProxy(messages);
-            } catch (proxyError) {
-                console.log(`代理调用失败，尝试直接调用...`);
-                response = await callClaudeAPIDirect(messages);
-            }
-            
+            const response = await callClaudeAPIViaProxy(messages);
             console.log(`响应类型: ${response.stop_reason}`);
 
             let hasToolUse = false;
@@ -348,7 +375,8 @@ async function agentLoop(userInput, messages = []) {
                     hasToolUse = true;
                     console.log(`工具调用: ${block.name}`);
 
-                    const toolResult = executeTool(block.name, block.input);
+                    const toolResult = await executeTool(block.name, block.input);
+                    console.log(`工具结果: ${toolResult.substring(0, 200)}...`);
 
                     messages.push({ role: 'assistant', content: assistantContent });
                     messages.push({
@@ -370,51 +398,11 @@ async function agentLoop(userInput, messages = []) {
             }
         } catch (error) {
             console.error(`Agent Loop 错误:`, error.message);
-            
-            // API 失败时返回模拟响应
-            if (loopCount === 1) {
-                const fallbackResponse = generateFallbackResponse(userInput);
-                return { response: fallbackResponse, messages };
-            }
-            
             throw error;
         }
     }
 
     return { response: '达到最大循环次数', messages };
-}
-
-// 生成模拟响应
-function generateFallbackResponse(input) {
-    const prices = { 'AAPL': 168.50, 'NVDA': 520.80, 'TSLA': 245.60, '600519': 1800.00 };
-    const names = { 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.', '600519': '贵州茅台' };
-    
-    let symbol = '未知';
-    for (const [key, value] of Object.entries(names)) {
-        if (input.includes(key) || input.includes(value)) {
-            symbol = key;
-            break;
-        }
-    }
-    if (symbol === '未知' && input.includes('茅台')) symbol = '600519';
-    if (symbol === '未知' && input.includes('苹果')) symbol = 'AAPL';
-    if (symbol === '未知' && input.includes('英伟达')) symbol = 'NVDA';
-    if (symbol === '未知' && input.includes('特斯拉')) symbol = 'TSLA';
-    
-    if (prices[symbol]) {
-        return `[模拟数据 - API 连接失败]\n\n📊 ${symbol}（${names[symbol]}）分析报告\n\n` +
-               `💰 行情数据：\n` +
-               `• 当前价格：${symbol === '600519' ? '¥' : '$'}${prices[symbol].toFixed(2)}\n` +
-               `• 涨跌幅：+2.35%\n` +
-               `• 成交量：2.5M\n\n` +
-               `📈 技术指标：\n` +
-               `• RSI：65（中性区间）\n` +
-               `• MA_20：${symbol === '600519' ? '¥' : '$'}${(prices[symbol] * 0.98).toFixed(2)}\n\n` +
-               `⚠️ 注意：当前为模拟数据\n` +
-               `API 连接失败，请检查代理或网络设置。`;
-    }
-    
-    return `抱歉，无法识别股票代码。请使用有效的代码，如：\n• AAPL（苹果）\n• NVDA（英伟达）\n• TSLA（特斯拉）\n• 600519（茅台）`;
 }
 
 // HTTP 服务器
@@ -474,5 +462,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
     console.log(`\n${'='.repeat(50)}`);
     console.log(`Stock Agent API 运行在 http://localhost:${PORT}/`);
+    console.log(`数据来源: 雅虎财经（真实数据）`);
     console.log(`${'='.repeat(50)}\n`);
 });
