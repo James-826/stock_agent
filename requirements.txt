@@ -1,17 +1,17 @@
 ﻿# Stock Agent 依赖
-# 对应 Phase 4 技术栈的 Runtime 层
 
 # 模型集成层：调用 Claude API
-# 对应 oss 的 Anthropic SDK
 anthropic>=0.40.0
 
 # 数据层：数据验证
-# 对应 oss 的 Zod（TypeScript 的 Pydantic）
 pydantic>=2.0.0
 
 # 工具数据源：股票行情、K线、估值、新闻
-# 这是我们的"搜索工具"，类似 oss 用 grep 获取信息
 yfinance>=0.2.40
+
+# Web 框架：API 服务器
+fastapi>=0.109.0
+uvicorn>=0.27.0
 
 # 开发依赖（可选）
 pytest>=8.0.0

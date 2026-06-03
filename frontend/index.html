@@ -24,7 +24,10 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // 模拟数据
+        // API 配置
+        const API_BASE = 'http://localhost:8000';
+
+        // 模拟行情数据（后续可以从 API 获取）
         const mockQuote = {
             symbol: 'AAPL',
             name: 'Apple Inc.',
@@ -258,11 +261,12 @@
             );
         }
 
-        // ChatPanel 组件
+        // ChatPanel 组件 - 现在调用真实 API
         function ChatPanel({ selectedSymbol }) {
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
             const [isLoading, setIsLoading] = useState(false);
+            const [sessionId, setSessionId] = useState(null);
             const messagesEndRef = useRef(null);
 
             useEffect(() => {
@@ -277,15 +281,44 @@
                 setInput('');
                 setIsLoading(true);
 
-                // 模拟 API 调用
-                setTimeout(() => {
+                try {
+                    // 调用后端 API
+                    const response = await fetch(`${API_BASE}/api/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: input,
+                            session_id: sessionId,
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('API 请求失败');
+                    }
+
+                    const data = await response.json();
+                    
+                    // 保存 session_id
+                    if (data.session_id) {
+                        setSessionId(data.session_id);
+                    }
+
+                    // 添加 Agent 回答
+                    const botMessage = { role: 'assistant', content: data.response };
+                    setMessages(prev => [...prev, botMessage]);
+                } catch (error) {
+                    console.error('API 错误:', error);
+                    // 如果 API 不可用，使用模拟数据
                     const botMessage = { 
                         role: 'assistant', 
                         content: `关于 ${selectedSymbol} 的分析：\n\n当前价格：$${mockQuote.price}\n涨跌幅：+${mockQuote.changePct}%\n\n技术面：RSI 为 65，处于中性区间\n基本面：PE 为 ${mockValuation.pe}，估值合理\n\n建议：需要综合分析，投资有风险。` 
                     };
                     setMessages(prev => [...prev, botMessage]);
+                } finally {
                     setIsLoading(false);
-                }, 1500);
+                }
             };
 
             const handleKeyPress = (e) => {
