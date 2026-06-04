@@ -200,25 +200,27 @@ async function executeTool(name, params) {
         }
         if (name === 'stock_valuation') {
             const symbol = normalizeSymbol(params.symbol, params.market);
-            // 先尝试 quoteSummary API（需要 crumb 认证，可能失败）
-            try {
-                const data = await fetchYahooAPI('/v10/finance/quoteSummary/' + symbol + '?modules=defaultKeyStatistics,financialData,summaryDetail');
-                const result = data?.quoteSummary?.result?.[0];
-                if (result) {
-                    const ks = result.defaultKeyStatistics || {};
-                    const fd = result.financialData || {};
-                    const sd = result.summaryDetail || {};
-                    return JSON.stringify({
-                        symbol: params.symbol, source: 'yahoo_quoteSummary',
-                        pe_ttm: sd.trailingPE?.raw || null, pe_forward: sd.forwardPE?.raw || null,
-                        pb: ks.priceToBook?.raw || null, ps: ks.priceToSalesTrailing12Months?.raw || null,
-                        peg_ratio: ks.pegRatio?.raw || null, dividend_yield: sd.dividendYield?.raw || null,
-                        profit_margin: fd.profitMargins?.raw || null, roe: ks.returnOnEquity?.raw || null,
-                        debt_to_equity: ks.debtToEquity?.raw || null, currency: sd.currency || 'USD',
-                    });
-                }
-            } catch (e) { /* quoteSummary 需要认证，回退到 chart 数据 */ }
-            // 回退：使用 chart API 的 meta 数据
+            // 第一层：Alpha Vantage（完整PE/PB/ROE等指标）
+            const av = await fetchAlphaVantage(symbol);
+            if (av && av.PERatio) {
+                return JSON.stringify({
+                    symbol: params.symbol, source: 'alpha_vantage',
+                    pe_ttm: parseFloat(av.PERatio) || null,
+                    pb: parseFloat(av.PriceToBookRatio) || null,
+                    ps: parseFloat(av.PriceToSalesRatio) || null,
+                    peg_ratio: parseFloat(av.PEGRatio) || null,
+                    dividend_yield: parseFloat(av.DividendYield) || null,
+                    eps: parseFloat(av.EPS) || null,
+                    market_cap: parseInt(av.MarketCapitalization) || null,
+                    profit_margin: parseFloat(av.ProfitMargin) || null,
+                    roe: parseFloat(av.ReturnOnEquityTTM) || null,
+                    revenue: parseInt(av.RevenueTTM) || null,
+                    fifty_two_week_high: parseFloat(av['52WeekHigh']) || null,
+                    fifty_two_week_low: parseFloat(av['52WeekLow']) || null,
+                    currency: av.Currency || 'USD',
+                });
+            }
+            // 第二层：Yahoo Finance chart meta（回退）
             const chartData = await fetchYahooFinance(symbol);
             const m = chartData.meta;
             return JSON.stringify({
@@ -227,7 +229,6 @@ async function executeTool(name, params) {
                 fifty_two_week_low: m.fiftyTwoWeekLow, day_high: m.regularMarketDayHigh,
                 day_low: m.regularMarketDayLow, volume: m.regularMarketVolume,
                 exchange: m.fullExchangeName, currency: m.currency,
-                note: '详细PE/PB数据需要API key（Alpha Vantage免费注册：https://www.alphavantage.co/support/#api-key）',
             });
         }
         if (name === 'stock_news') {
@@ -252,6 +253,29 @@ async function executeTool(name, params) {
     return JSON.stringify({ error: 'UNKNOWN_TOOL' });
 }
 
+
+// Alpha Vantage API（免费PE/PB数据源）
+const AV_KEY = process.env.ALPHA_VANTAGE_KEY || '';
+function fetchAlphaVantage(symbol) {
+    if (!AV_KEY) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+        const url = new URL('https://www.alphavantage.co/query?function=OVERVIEW&symbol=' + encodeURIComponent(symbol) + '&apikey=' + AV_KEY);
+        const proxyReq = http.request({ host: PROXY_HOST, port: PROXY_PORT, method: 'CONNECT', path: url.hostname + ':443' });
+        proxyReq.on('connect', (res, socket) => {
+            if (res.statusCode !== 200) return reject(new Error('proxy'));
+            https.request({ host: url.hostname, path: url.pathname + url.search, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0' }, socket }, (apiRes) => {
+                let data = '';
+                apiRes.on('data', chunk => data += chunk);
+                apiRes.on('end', () => {
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { resolve(null); }
+                });
+            }).on('error', () => resolve(null)).end();
+        });
+        proxyReq.on('error', () => resolve(null));
+        proxyReq.end();
+    });
+}
 // ========== 系统提示词 ==========
 const SYSTEM_PROMPT = `你是一个专业的股票分析助手。记住用户之前提到的股票，如果用户使用代词（它、这家），根据上下文推断。
 
