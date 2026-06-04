@@ -8,17 +8,46 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'] },
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a5f' },
+                        accent: { 500: '#8b5cf6', 600: '#7c3aed' },
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.4s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+                        slideUp: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; margin: 0; }
-        .gradient-bg { background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); }
-        .sidebar-gradient { background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); }
-        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        body { font-family: 'Inter', sans-serif; margin: 0; background: #f8fafc; }
+        .glass { background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .gradient-brand { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .gradient-dark { background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); }
+        .shadow-soft { box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03); }
+        .shadow-card { box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04); }
+        .shadow-elevated { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 10px 25px -5px rgba(0,0,0,0.06); }
+        .scrollbar-thin::-webkit-scrollbar { width: 5px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .dot-typing span { animation: dotTyping 1.4s infinite ease-in-out both; }
+        .dot-typing span:nth-child(1) { animation-delay: -0.32s; }
+        .dot-typing span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes dotTyping { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
     </style>
 </head>
 <body class="h-screen overflow-hidden">
@@ -26,126 +55,186 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
-
         const API_BASE = 'http://localhost:8000';
 
-        // 侧边栏组件
+        // SVG 图标组件
+        const Icons = {
+            Plus: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+            Chat: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>,
+            Send: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>,
+            Trending: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>,
+            Bot: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
+            User: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
+            Tool: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+            Clock: () => <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+        };
+
+        // 加载动画
+        function TypingIndicator() {
+            return (
+                <div className="flex items-center space-x-1.5 px-4 py-3">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center">
+                        <Icons.Bot />
+                    </div>
+                    <div className="bg-white rounded-2xl px-4 py-3 shadow-soft ml-2">
+                        <div className="dot-typing flex space-x-1">
+                            <span className="w-2 h-2 bg-brand-500 rounded-full"></span>
+                            <span className="w-2 h-2 bg-brand-500 rounded-full"></span>
+                            <span className="w-2 h-2 bg-brand-500 rounded-full"></span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 侧边栏
         function Sidebar({ sessions, currentSessionId, onSelectSession, onNewSession }) {
             return (
-                <div className="w-64 sidebar-gradient text-white flex flex-col h-full">
+                <div className="w-72 gradient-dark text-white flex flex-col h-full">
                     {/* Logo */}
-                    <div className="p-4 border-b border-slate-700">
+                    <div className="p-5 border-b border-white/10">
                         <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                </svg>
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center shadow-lg">
+                                <Icons.Trending />
                             </div>
                             <div>
-                                <h1 className="font-bold text-lg">Stock Agent</h1>
-                                <p className="text-xs text-slate-400">AI 股票分析</p>
+                                <h1 className="font-bold text-lg tracking-tight">Stock Agent</h1>
+                                <p className="text-xs text-slate-400 font-medium">AI 智能分析</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* 新建会话按钮 */}
-                    <div className="p-3">
+                    {/* 新建按钮 */}
+                    <div className="p-4">
                         <button
                             onClick={onNewSession}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl transition-all duration-200 hover:shadow-lg text-sm font-medium"
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            <span>新建会话</span>
+                            <Icons.Plus />
+                            <span>新建分析</span>
                         </button>
                     </div>
 
                     {/* 会话列表 */}
-                    <div className="flex-1 overflow-y-auto scrollbar-thin px-2">
-                        {sessions.map(session => (
-                            <div
-                                key={session.id}
-                                onClick={() => onSelectSession(session.id)}
-                                className={`px-3 py-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
-                                    session.id === currentSessionId
-                                        ? 'bg-slate-700 text-white'
-                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                }`}
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                                    </svg>
-                                    <span className="text-sm truncate">{session.title || '新会话'}</span>
+                    <div className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-4">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">历史记录</p>
+                        {sessions.length === 0 ? (
+                            <p className="text-sm text-slate-600 px-3 py-4">暂无会话</p>
+                        ) : (
+                            sessions.map(session => (
+                                <div
+                                    key={session.id}
+                                    onClick={() => onSelectSession(session.id)}
+                                    className={`group px-3 py-3 rounded-xl mb-1 cursor-pointer transition-all duration-200 ${
+                                        session.id === currentSessionId
+                                            ? 'bg-white/15 text-white shadow-lg'
+                                            : 'text-slate-400 hover:bg-white/8 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <div className="flex items-center space-x-2.5">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                            session.id === currentSessionId ? 'bg-brand-500/30' : 'bg-white/5 group-hover:bg-white/10'
+                                        }`}>
+                                            <Icons.Chat />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{session.title || '新会话'}</p>
+                                            <p className="text-xs text-slate-500 mt-0.5 flex items-center space-x-1">
+                                                <Icons.Clock />
+                                                <span>{new Date(session.updated_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="text-xs text-slate-500 mt-1 ml-6">
-                                    {new Date(session.updated_at).toLocaleString('zh-CN', { 
-                                        month: 'short', 
-                                        day: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                    })}
-                                </div>
-                            </div>
-                        ))}
+                            ))
+                        )}
+                    </div>
+
+                    {/* 底部信息 */}
+                    <div className="p-4 border-t border-white/10">
+                        <div className="flex items-center space-x-2 text-xs text-slate-500">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse-slow"></div>
+                            <span>API 已连接</span>
+                        </div>
                     </div>
                 </div>
             );
         }
 
         // 消息组件
-        function Message({ message }) {
+        function Message({ message, isLast }) {
             const isUser = message.role === 'user';
             
-            // 处理工具调用消息
             if (Array.isArray(message.content)) {
                 const toolUse = message.content.find(b => b.type === 'tool_use');
                 const text = message.content.find(b => b.type === 'text');
                 
                 if (toolUse) {
                     return (
-                        <div className="flex justify-start mb-4 animate-fade-in">
-                            <div className="bg-slate-100 rounded-xl px-4 py-3 max-w-[80%]">
-                                <div className="flex items-center space-x-2 text-sm text-slate-600">
-                                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span>调用工具: <strong>{toolUse.name}</strong></span>
+                        <div className="flex justify-start mb-4 animate-slide-up">
+                            <div className="flex items-start space-x-3 max-w-[85%]">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center flex-shrink-0 mt-1">
+                                    <Icons.Tool />
                                 </div>
-                                {text && <p className="text-sm text-slate-700 mt-2">{text.text}</p>}
+                                <div className="bg-brand-50 border border-brand-100 rounded-2xl rounded-tl-md px-4 py-3">
+                                    <div className="flex items-center space-x-2 text-sm">
+                                        <span className="text-brand-600 font-semibold">调用工具</span>
+                                        <span className="text-brand-400">·</span>
+                                        <span className="text-brand-700 font-medium">{toolUse.name}</span>
+                                    </div>
+                                    {text && <p className="text-sm text-slate-600 mt-1.5">{text.text}</p>}
+                                </div>
                             </div>
                         </div>
                     );
                 }
             }
             
-            // 普通消息
             const content = typeof message.content === 'string' ? message.content : 
                            Array.isArray(message.content) ? message.content.map(b => b.text || '').join('') : '';
             
             if (!content) return null;
 
             return (
-                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-fade-in`}>
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                        isUser 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-white border border-slate-200 text-slate-900 shadow-sm'
-                    }`}>
-                        {!isUser && (
-                            <div className="flex items-center space-x-2 mb-2">
-                                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                                <span className="text-xs font-medium text-slate-500">Stock Agent</span>
-                            </div>
-                        )}
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-slide-up`}>
+                    <div className={`flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : ''} max-w-[85%]`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${
+                            isUser ? 'bg-brand-600' : 'bg-gradient-to-br from-brand-500 to-accent-500'
+                        }`}>
+                            {isUser ? <Icons.User /> : <Icons.Bot />}
+                        </div>
+                        <div className={`rounded-2xl px-4 py-3 ${
+                            isUser 
+                                ? 'bg-brand-600 text-white rounded-tr-md shadow-md' 
+                                : 'bg-white text-slate-800 rounded-tl-md shadow-soft border border-slate-100'
+                        }`}>
+                            <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>
+                        </div>
                     </div>
+                </div>
+            );
+        }
+
+        // 快捷按钮
+        function QuickActions({ onSend }) {
+            const actions = [
+                { label: 'NVDA 英伟达', query: '帮我分析一下 NVDA' },
+                { label: 'AAPL 苹果', query: 'AAPL 现在多少钱' },
+                { label: 'TSLA 特斯拉', query: 'TSLA 最近怎么样' },
+                { label: '茅台', query: '帮我分析一下茅台' },
+            ];
+
+            return (
+                <div className="grid grid-cols-2 gap-2 max-w-sm">
+                    {actions.map(({ label, query }) => (
+                        <button
+                            key={label}
+                            onClick={() => onSend(query)}
+                            className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 transition-all duration-200 shadow-soft hover:shadow-card font-medium"
+                        >
+                            {label}
+                        </button>
+                    ))}
                 </div>
             );
         }
@@ -172,99 +261,78 @@
                 }
             };
 
+            const hasMessages = session?.messages?.filter(m => m.role !== 'system')?.length > 0;
+
             return (
-                <div className="flex-1 flex flex-col bg-slate-50">
+                <div className="flex-1 flex flex-col bg-slate-50/50">
                     {/* 头部 */}
-                    <div className="bg-white border-b border-slate-200 px-6 py-4">
+                    <div className="glass border-b border-slate-200/80 px-6 py-4 sticky top-0 z-10">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h2 className="text-lg font-semibold text-slate-900">
+                                <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
                                     {session?.title || 'Stock Agent'}
                                 </h2>
-                                <p className="text-sm text-slate-500">
-                                    {session?.messages?.length || 0} 条消息
+                                <p className="text-sm text-slate-500 mt-0.5">
+                                    {hasMessages ? `${session.messages.filter(m => m.role !== 'system').length} 条消息` : '开始新的分析'}
                                 </p>
                             </div>
-                            <div className="flex items-center space-x-2 text-sm text-slate-500">
-                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                <span>已连接</span>
+                            <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 rounded-full">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="text-sm text-green-700 font-medium">在线</span>
                             </div>
                         </div>
                     </div>
 
                     {/* 消息列表 */}
-                    <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">
-                        {!session || session.messages.length === 0 ? (
+                    <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+                        {!hasMessages ? (
                             <div className="h-full flex items-center justify-center">
-                                <div className="text-center">
-                                    <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                        <svg className="w-10 h-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                <div className="text-center animate-fade-in">
+                                    <div className="w-24 h-24 bg-gradient-to-br from-brand-100 to-accent-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-soft">
+                                        <svg className="w-12 h-12 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
                                     </div>
-                                    <h3 className="text-xl font-semibold text-slate-900 mb-2">开始分析股票</h3>
-                                    <p className="text-slate-500 mb-6">输入股票代码或名称，AI 会为你分析</p>
-                                    <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
-                                        {['NVDA 英伟达', 'AAPL 苹果', 'TSLA 特斯拉', '茅台 600519'].map((item) => (
-                                            <button
-                                                key={item}
-                                                onClick={() => onSendMessage(`帮我分析一下${item.split(' ')[0]}`)}
-                                                className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                                            >
-                                                {item}
-                                            </button>
-                                        ))}
+                                    <h3 className="text-2xl font-bold text-slate-900 mb-2 tracking-tight">智能股票分析</h3>
+                                    <p className="text-slate-500 mb-8 text-base">输入股票代码或名称，AI 为你深度分析</p>
+                                    <div className="flex justify-center">
+                                        <QuickActions onSend={onSendMessage} />
                                     </div>
                                 </div>
                             </div>
                         ) : (
                             <>
-                                {session.messages.filter(m => m.role !== 'system').map((message, index) => (
-                                    <Message key={index} message={message} />
+                                {session.messages.filter(m => m.role !== 'system').map((message, index, arr) => (
+                                    <Message key={index} message={message} isLast={index === arr.length - 1} />
                                 ))}
-                                {isLoading && (
-                                    <div className="flex justify-start mb-4">
-                                        <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
-                                            <div className="flex items-center space-x-2">
-                                                <div className="flex space-x-1">
-                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
-                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
-                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
-                                                </div>
-                                                <span className="text-sm text-slate-500">分析中...</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                {isLoading && <TypingIndicator />}
                             </>
                         )}
                         <div ref={messagesEndRef} />
                     </div>
 
                     {/* 输入框 */}
-                    <div className="bg-white border-t border-slate-200 px-6 py-4">
-                        <div className="flex space-x-3">
+                    <div className="bg-white border-t border-slate-200/80 px-6 py-4">
+                        <div className="flex space-x-3 max-w-4xl mx-auto">
                             <input
                                 type="text"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyPress={handleKeyPress}
                                 placeholder="输入股票问题，如：NVDA 现在多少钱？"
-                                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 text-sm transition-all duration-200"
                                 disabled={isLoading}
                             />
                             <button
                                 onClick={handleSend}
                                 disabled={!input.trim() || isLoading}
-                                className="px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="px-5 py-3 bg-gradient-to-r from-brand-600 to-accent-600 text-white rounded-xl hover:from-brand-700 hover:to-accent-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                </svg>
+                                <Icons.Send />
                             </button>
                         </div>
-                        <p className="text-xs text-slate-400 mt-2">
-                            提示：支持股票代码（NVDA、AAPL）或中文名称（英伟达、苹果）
+                        <p className="text-xs text-slate-400 mt-2 text-center">
+                            支持股票代码（NVDA、AAPL）或中文名称（英伟达、苹果）· 按 Enter 发送
                         </p>
                     </div>
                 </div>
@@ -278,7 +346,6 @@
             const [currentSession, setCurrentSession] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
 
-            // 加载会话列表
             const loadSessions = useCallback(async () => {
                 try {
                     const res = await fetch(`${API_BASE}/api/sessions`);
@@ -289,11 +356,8 @@
                 }
             }, []);
 
-            useEffect(() => {
-                loadSessions();
-            }, [loadSessions]);
+            useEffect(() => { loadSessions(); }, [loadSessions]);
 
-            // 创建新会话
             const handleNewSession = useCallback(async () => {
                 try {
                     const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
@@ -306,7 +370,6 @@
                 }
             }, [loadSessions]);
 
-            // 选择会话
             const handleSelectSession = useCallback(async (sessionId) => {
                 try {
                     const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`);
@@ -318,23 +381,21 @@
                 }
             }, []);
 
-            // 发送消息
             const handleSendMessage = useCallback(async (message) => {
-                setIsLoading(true);
+                if (!currentSessionId) {
+                    const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
+                    const session = await res.json();
+                    setCurrentSessionId(session.id);
+                }
                 
+                setIsLoading(true);
                 try {
                     const res = await fetch(`${API_BASE}/api/chat`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: message,
-                            session_id: currentSessionId,
-                        }),
+                        body: JSON.stringify({ message, session_id: currentSessionId }),
                     });
-
                     const data = await res.json();
-                    
-                    // 更新当前会话
                     setCurrentSessionId(data.session_id);
                     handleSelectSession(data.session_id);
                     loadSessions();
