@@ -152,6 +152,32 @@
             );
         }
 
+
+        // 流式消息（正在接收中的）
+        function StreamingMessage({ steps }) {
+            if (!steps || steps.length === 0) return null;
+            return (
+                <div className="flex justify-start mb-4 animate-slide-up">
+                    <div className="flex items-start space-x-3 max-w-[85%]">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center flex-shrink-0 mt-1">
+                            <Icons.Bot />
+                        </div>
+                        <div className="rounded-2xl px-4 py-3 bg-white text-slate-800 rounded-tl-md shadow-soft border border-slate-100">
+                            <ThinkingProcess steps={steps} />
+                            <div className="flex items-center space-x-1.5 text-slate-400 mt-2">
+                                <div className="dot-typing flex space-x-1">
+                                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full inline-block"></span>
+                                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full inline-block"></span>
+                                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full inline-block"></span>
+                                </div>
+                                <span className="text-xs">分析中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // 格式化工具结果
         function formatToolResult(content) {
             try {
@@ -344,16 +370,16 @@
         }
 
         // 主聊天区域
-        function ChatArea({ session, onSendMessage, isLoading }) {
+        function ChatArea({ session, onSendMessage, isStreaming, streamingSteps, onStop }) {
             const [input, setInput] = useState('');
             const messagesEndRef = useRef(null);
 
             useEffect(() => {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }, [session?.messages]);
+            }, [session?.messages, streamingSteps]);
 
             const handleSend = () => {
-                if (!input.trim() || isLoading) return;
+                if (!input.trim() || isStreaming) return;
                 onSendMessage(input);
                 setInput('');
             };
@@ -407,7 +433,7 @@
                                 {session.messages.filter(m => m.role !== 'system').map((message, index) => (
                                     <Message key={index} message={message} />
                                 ))}
-                                {isLoading && <TypingIndicator />}
+                                {isStreaming && <StreamingMessage steps={streamingSteps} />}
                             </>
                         )}
                         <div ref={messagesEndRef} />
@@ -422,15 +448,16 @@
                                 onKeyPress={handleKeyPress}
                                 placeholder="输入股票问题，如：NVDA 现在多少钱？"
                                 className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 text-sm transition-all duration-200"
-                                disabled={isLoading}
                             />
-                            <button
-                                onClick={handleSend}
-                                disabled={!input.trim() || isLoading}
-                                className="px-5 py-3 bg-gradient-to-r from-brand-600 to-accent-600 text-white rounded-xl hover:from-brand-700 hover:to-accent-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
-                            >
-                                <Icons.Send />
-                            </button>
+                            {isStreaming ? (
+                                <button onClick={onStop} className="px-5 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all duration-200 shadow-md" title="停止生成">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                </button>
+                            ) : (
+                                <button onClick={handleSend} disabled={!input.trim()} className="px-5 py-3 bg-gradient-to-r from-brand-600 to-accent-600 text-white rounded-xl hover:from-brand-700 hover:to-accent-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg">
+                                    <Icons.Send />
+                                </button>
+                            )}
                         </div>
                         <p className="text-xs text-slate-400 mt-2 text-center">
                             支持股票代码（NVDA、AAPL）或中文名称（英伟达、苹果）· 按 Enter 发送
@@ -445,7 +472,9 @@
             const [sessions, setSessions] = useState([]);
             const [currentSessionId, setCurrentSessionId] = useState(null);
             const [currentSession, setCurrentSession] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
+            const [isStreaming, setIsStreaming] = useState(false);
+            const [streamingSteps, setStreamingSteps] = useState([]);
+            const abortControllerRef = useRef(null);
 
             const loadSessions = useCallback(async () => {
                 try {
@@ -483,29 +512,79 @@
             }, []);
 
             const handleSendMessage = useCallback(async (message) => {
-                if (!currentSessionId) {
+                let sessionId = currentSessionId;
+                if (!sessionId) {
                     const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
                     const session = await res.json();
-                    setCurrentSessionId(session.id);
+                    sessionId = session.id;
+                    setCurrentSessionId(sessionId);
                 }
-                
-                setIsLoading(true);
+
+                // 立即将用户消息添加到本地 UI
+                const userMessage = { role: 'user', content: message };
+                setCurrentSession(prev => ({
+                    ...prev,
+                    messages: [...(prev?.messages || []), userMessage],
+                }));
+
+                // 开始流式 SSE 请求
+                setIsStreaming(true);
+                setStreamingSteps([]);
+                const controller = new AbortController();
+                abortControllerRef.current = controller;
+
                 try {
                     const res = await fetch(`${API_BASE}/api/chat`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message, session_id: currentSessionId }),
+                        body: JSON.stringify({ message, session_id: sessionId }),
+                        signal: controller.signal,
                     });
-                    const data = await res.json();
-                    setCurrentSessionId(data.session_id);
-                    handleSelectSession(data.session_id);
-                    loadSessions();
+
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            const data = line.slice(6).trim();
+                            if (data === '[DONE]') break;
+                            try {
+                                const event = JSON.parse(data);
+                                if (event.type === 'tool_use') {
+                                    setStreamingSteps(prev => [...prev, { type: 'tool_use', name: event.name, input: event.input }]);
+                                } else if (event.type === 'tool_result') {
+                                    setStreamingSteps(prev => [...prev, { type: 'tool_result', name: event.name, content: event.content }]);
+                                } else if (event.type === 'final_response') {
+                                    setCurrentSession(prev => ({
+                                        ...prev,
+                                        messages: [...(prev?.messages || []), { role: 'assistant', content: [{ type: 'text', text: event.content }] }],
+                                    }));
+                                    if (event.session_id) setCurrentSessionId(event.session_id);
+                                }
+                            } catch (e) {}
+                        }
+                    }
                 } catch (e) {
-                    console.error('发送消息失败:', e);
+                    if (e.name !== 'AbortError') console.error('流式请求失败:', e);
                 } finally {
-                    setIsLoading(false);
+                    setIsStreaming(false);
+                    setStreamingSteps([]);
+                    abortControllerRef.current = null;
+                    loadSessions();
                 }
-            }, [currentSessionId, handleSelectSession, loadSessions]);
+            }, [currentSessionId, loadSessions]);
+
+            const handleStop = useCallback(() => {
+                if (abortControllerRef.current) abortControllerRef.current.abort();
+            }, []);
 
             return (
                 <div className="h-screen flex">
@@ -518,7 +597,7 @@
                     <ChatArea
                         session={currentSession}
                         onSendMessage={handleSendMessage}
-                        isLoading={isLoading}
+                        isStreaming={isStreaming}
                     />
                 </div>
             );
