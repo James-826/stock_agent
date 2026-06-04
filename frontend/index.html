@@ -519,6 +519,14 @@
 
             useEffect(() => { loadSessions(); }, [loadSessions]);
 
+            // 自动选中最新会话（刷新页面或首次加载时）
+            useEffect(() => {
+                if (!currentSessionId && sessions.length > 0) {
+                    const latest = sessions.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+                    handleSelectSession(latest.id);
+                }
+            }, [sessions, currentSessionId]);
+
             const handleNewSession = useCallback(async () => {
                 try {
                     const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
