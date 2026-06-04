@@ -573,9 +573,8 @@
                                 if (event.type === 'user_message') {
                                     continue;
                                 }
-                                // 新轮次开始 → 清空上一轮的思考步骤
+                                // round_start 仅标记轮次，不清空步骤（避免闪烁）
                                 if (event.type === 'round_start') {
-                                    setStreamingSteps([]);
                                     continue;
                                 }
                                 if (event.type === 'text') {
