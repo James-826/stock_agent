@@ -229,10 +229,11 @@ async function agentLoopSSE(userInput, sessionId, sendEvent) {
     session.messages.push({ role: 'user', content: userInput });
     if (session.messages.length === 1) session.title = userInput.substring(0, 50);
 
-    sendEvent('user_message', { content: userInput });
+    // user_message 不再通过 SSE 发送，前端本地已添加
 
     for (let i = 0; i < 10; i++) {
         console.log(`\nAgent Loop 第 ${i + 1} 轮`);
+        sendEvent('round_start', { round: i + 1 });
         
         const response = await callClaudeAPI(session.messages);
         let hasToolUse = false;
