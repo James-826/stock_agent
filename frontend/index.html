@@ -315,6 +315,11 @@
                         });
                     } else if (block.type === 'text') {
                         mainContent = block.text;
+                    } else if (block.type === 'thinking') {
+                        thinkingSteps.push({
+                            type: 'thinking',
+                            content: block.thinking || block.text || '',
+                        });
                     }
                 });
             } else if (typeof message.content === 'string') {
@@ -445,11 +450,10 @@
                         ) : (
                             <>
                                 {session.messages.filter(m => {
-    // 跳过纯 tool_use/tool_result 消息（中间步骤已在 StreamingMessage 中展示）
+    // 跳过包含 tool_use 的 assistant 消息（中间步骤，已在流式时展示）
     if (m.role === 'assistant' && Array.isArray(m.content)) {
-        const hasText = m.content.some(b => b.type === 'text' && b.text);
-        const hasOnlyTools = m.content.every(b => b.type === 'tool_use' || b.type === 'tool_result');
-        if (hasOnlyTools && !hasText) return false;
+        const hasToolUse = m.content.some(b => b.type === 'tool_use');
+        if (hasToolUse) return false;
     }
     // 跳过 tool_result 消息（role=user 但内容是 tool_result 数组）
     if (m.role === 'user' && Array.isArray(m.content)) {
