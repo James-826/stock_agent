@@ -328,6 +328,9 @@
 
             if (!mainContent && thinkingSteps.length === 0) return null;
 
+            // 用户消息必须有内容才渲染
+            if (isUser && !mainContent) return null;
+
             return (
                 <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-slide-up`}>
                     <div className={`flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : ''} max-w-[85%]`}>
@@ -441,7 +444,20 @@
                             </div>
                         ) : (
                             <>
-                                {session.messages.filter(m => m.role !== 'system').map((message, index) => (
+                                {session.messages.filter(m => {
+    // 跳过纯 tool_use/tool_result 消息（中间步骤已在 StreamingMessage 中展示）
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+        const hasText = m.content.some(b => b.type === 'text' && b.text);
+        const hasOnlyTools = m.content.every(b => b.type === 'tool_use' || b.type === 'tool_result');
+        if (hasOnlyTools && !hasText) return false;
+    }
+    // 跳过 tool_result 消息（role=user 但内容是 tool_result 数组）
+    if (m.role === 'user' && Array.isArray(m.content)) {
+        const isToolResult = m.content.every(b => b.type === 'tool_result');
+        if (isToolResult) return false;
+    }
+    return true;
+}).map((message, index) => (
                                     <Message key={index} message={message} />
                                 ))}
                                 {isStreaming && <StreamingMessage steps={streamingSteps} />}
