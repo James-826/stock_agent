@@ -531,7 +531,7 @@
                     setCurrentSessionId(sessionId);
                 }
 
-                // 立即将用户消息添加到本地 UI
+                // 立即将用户消息添加到本地 UI（即时反馈）
                 const userMessage = { role: 'user', content: message };
                 setCurrentSession(prev => ({
                     ...prev,
@@ -585,12 +585,8 @@
                                 } else if (event.type === 'tool_result') {
                                     setStreamingSteps(prev => [...prev, { type: 'tool_result', name: event.name, content: event.content }]);
                                 } else if (event.type === 'final_response') {
-                                    // 最终回复：清空思考步骤，添加正式消息
+                                    // 最终回复：清空思考步骤
                                     setStreamingSteps([]);
-                                    setCurrentSession(prev => ({
-                                        ...prev,
-                                        messages: [...(prev?.messages || []), { role: 'assistant', content: [{ type: 'text', text: event.content }] }],
-                                    }));
                                     if (event.session_id) setCurrentSessionId(event.session_id);
                                 }
                             } catch (e) {}
@@ -605,6 +601,15 @@
                     setStreamingSteps([]);
                     abortControllerRef.current = null;
                     loadSessions();
+                    // 从后端重新获取完整 session（包含所有消息，避免重复）
+                    const finalSessionId = sessionId || currentSessionId;
+                    if (finalSessionId) {
+                        try {
+                            const r = await fetch(`${API_BASE}/api/sessions/${finalSessionId}`);
+                            const s = await r.json();
+                            setCurrentSession(s);
+                        } catch (err) {}
+                    }
                 }
             }, [currentSessionId, loadSessions]);
 
@@ -624,6 +629,8 @@
                         session={currentSession}
                         onSendMessage={handleSendMessage}
                         isStreaming={isStreaming}
+                        streamingSteps={streamingSteps}
+                        onStop={handleStop}
                     />
                 </div>
             );
