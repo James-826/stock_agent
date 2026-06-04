@@ -118,6 +118,29 @@ const TOOL_DEFINITIONS = [
 ];
 
 // ========== 雅虎财经 ==========
+
+// 通用 Yahoo Finance HTTPS 请求（通过代理）
+function fetchYahooAPI(path) {
+    return new Promise((resolve, reject) => {
+        const url = new URL('https://query1.finance.yahoo.com' + path);
+        const makeRequest = (socket) => {
+            const options = { host: url.hostname, path: url.pathname + url.search, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0' } };
+            if (socket) options.socket = socket;
+            https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('JSON parse error: ' + data.substring(0, 200))); }
+                });
+            }).on('error', reject).end();
+        };
+        const proxyReq = http.request({ host: PROXY_HOST, port: PROXY_PORT, method: 'CONNECT', path: url.hostname + ':443' });
+        proxyReq.on('connect', (res, socket) => res.statusCode === 200 ? makeRequest(socket) : reject(new Error('代理失败')));
+        proxyReq.on('error', reject);
+        proxyReq.end();
+    });
+}
 function fetchYahooFinance(symbol) {
     return new Promise((resolve, reject) => {
         const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1mo`);
@@ -160,10 +183,12 @@ async function executeTool(name, params) {
             const price = meta.regularMarketPrice;
             const prev = meta.previousClose || meta.chartPreviousClose;
             return JSON.stringify({
-                symbol: params.symbol, name: meta.shortName || params.symbol,
+                symbol: params.symbol, name: meta.shortName || meta.longName || params.symbol,
                 price, change: Math.round((price - prev) * 100) / 100,
                 change_pct: Math.round(((price - prev) / prev) * 10000) / 100,
-                volume: meta.regularMarketVolume, market_cap: meta.marketCap,
+                volume: meta.regularMarketVolume, day_high: meta.regularMarketDayHigh,
+                day_low: meta.regularMarketDayLow, fifty_two_week_high: meta.fiftyTwoWeekHigh,
+                fifty_two_week_low: meta.fiftyTwoWeekLow, exchange: meta.fullExchangeName,
                 currency: meta.currency, timestamp: new Date().toISOString(),
             });
         }
@@ -174,11 +199,53 @@ async function executeTool(name, params) {
             return JSON.stringify({ symbol: params.symbol, data_points: kline.length, dates: kline.map(d => d.date), close: kline.map(d => d.close) });
         }
         if (name === 'stock_valuation') {
-            const data = await fetchYahooFinance(normalizeSymbol(params.symbol, params.market));
-            const m = data.meta;
-            return JSON.stringify({ symbol: params.symbol, pe_ttm: m.trailingPE, pe_forward: m.forwardPE, pb: m.priceToBook, dividend_yield: m.dividendYield, currency: m.currency });
+            const symbol = normalizeSymbol(params.symbol, params.market);
+            // 先尝试 quoteSummary API（需要 crumb 认证，可能失败）
+            try {
+                const data = await fetchYahooAPI('/v10/finance/quoteSummary/' + symbol + '?modules=defaultKeyStatistics,financialData,summaryDetail');
+                const result = data?.quoteSummary?.result?.[0];
+                if (result) {
+                    const ks = result.defaultKeyStatistics || {};
+                    const fd = result.financialData || {};
+                    const sd = result.summaryDetail || {};
+                    return JSON.stringify({
+                        symbol: params.symbol, source: 'yahoo_quoteSummary',
+                        pe_ttm: sd.trailingPE?.raw || null, pe_forward: sd.forwardPE?.raw || null,
+                        pb: ks.priceToBook?.raw || null, ps: ks.priceToSalesTrailing12Months?.raw || null,
+                        peg_ratio: ks.pegRatio?.raw || null, dividend_yield: sd.dividendYield?.raw || null,
+                        profit_margin: fd.profitMargins?.raw || null, roe: ks.returnOnEquity?.raw || null,
+                        debt_to_equity: ks.debtToEquity?.raw || null, currency: sd.currency || 'USD',
+                    });
+                }
+            } catch (e) { /* quoteSummary 需要认证，回退到 chart 数据 */ }
+            // 回退：使用 chart API 的 meta 数据
+            const chartData = await fetchYahooFinance(symbol);
+            const m = chartData.meta;
+            return JSON.stringify({
+                symbol: params.symbol, source: 'yahoo_chart_meta',
+                price: m.regularMarketPrice, fifty_two_week_high: m.fiftyTwoWeekHigh,
+                fifty_two_week_low: m.fiftyTwoWeekLow, day_high: m.regularMarketDayHigh,
+                day_low: m.regularMarketDayLow, volume: m.regularMarketVolume,
+                exchange: m.fullExchangeName, currency: m.currency,
+                note: '详细PE/PB数据需要API key（Alpha Vantage免费注册：https://www.alphavantage.co/support/#api-key）',
+            });
         }
-        if (name === 'stock_news') return JSON.stringify({ symbol: params.symbol, news: [], total_count: 0 });
+        if (name === 'stock_news') {
+            const symbol = normalizeSymbol(params.symbol, params.market);
+            try {
+                const data = await fetchYahooAPI('/v1/finance/search?q=' + encodeURIComponent(params.symbol) + '&quotesCount=0&newsCount=' + (params.limit || 5) + '&quotesQueryId=tss_match_phrase_query');
+                const news = (data?.news || []).map(n => ({
+                    title: n.title,
+                    publisher: n.publisher,
+                    link: n.link,
+                    published_at: n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toISOString() : null,
+                    thumbnail: n.thumbnail?.resolutions?.[0]?.url || null,
+                }));
+                return JSON.stringify({ symbol: params.symbol, news, total_count: news.length });
+            } catch (e) {
+                return JSON.stringify({ symbol: params.symbol, news: [], total_count: 0, error: e.message });
+            }
+        }
     } catch (e) {
         return JSON.stringify({ error: 'DATA_UNAVAILABLE', message: e.message });
     }
