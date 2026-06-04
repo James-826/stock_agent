@@ -238,6 +238,13 @@ async function agentLoopSSE(userInput, sessionId, sendEvent) {
         let hasToolUse = false;
         const assistantContent = [];
 
+        // 先发送所有 text 块作为中间事件（让前端实时显示模型思考）
+        for (const block of response.content) {
+            if (block.type === 'text' && block.text) {
+                sendEvent('text', { content: block.text });
+            }
+        }
+
         for (const block of response.content) {
             assistantContent.push(block);
 
@@ -248,13 +255,14 @@ async function agentLoopSSE(userInput, sessionId, sendEvent) {
                 const result = await executeTool(block.name, block.input);
                 sendEvent('tool_result', { name: block.name, content: result });
 
-                session.messages.push({ role: 'assistant', content: assistantContent });
+                // 用 slice() 避免引用累积问题
+                session.messages.push({ role: 'assistant', content: assistantContent.slice() });
                 session.messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: block.id, content: result }] });
             }
         }
 
         if (!hasToolUse) {
-            const finalText = response.content[0]?.text || '';
+            const finalText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
             session.messages.push({ role: 'assistant', content: assistantContent });
             updateSession(session.id, session);
             sendEvent('final_response', { content: finalText, session_id: session.id });

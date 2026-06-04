@@ -134,13 +134,24 @@
                                         </div>
                                     )}
 
-                                    {step.type === 'thinking' && (
+{step.type === 'thinking' && (
                                         <div className="flex items-start space-x-2">
                                             <div className="w-5 h-5 rounded bg-purple-50 flex items-center justify-center flex-shrink-0 mt-0.5">
                                                 <Icons.Brain />
                                             </div>
                                             <p className="text-xs text-slate-400 italic leading-relaxed">
                                                 {step.content}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {step.type === 'text' && (
+                                        <div className="flex items-start space-x-2">
+                                            <div className="w-5 h-5 rounded bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                <Icons.Brain />
+                                            </div>
+                                            <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap">
+                                                {step.content.length > 300 ? step.content.substring(0, 300) + '...' : step.content}
                                             </p>
                                         </div>
                                     )}
@@ -558,7 +569,9 @@
                             if (data === '[DONE]') break;
                             try {
                                 const event = JSON.parse(data);
-                                if (event.type === 'tool_use') {
+                                if (event.type === 'text') {
+                                    setStreamingSteps(prev => [...prev, { type: 'text', content: event.content }]);
+                                } else if (event.type === 'tool_use') {
                                     setStreamingSteps(prev => [...prev, { type: 'tool_use', name: event.name, input: event.input }]);
                                 } else if (event.type === 'tool_result') {
                                     setStreamingSteps(prev => [...prev, { type: 'tool_result', name: event.name, content: event.content }]);
@@ -571,6 +584,8 @@
                                 }
                             } catch (e) {}
                         }
+                        // 让出事件循环，让 React 渲染
+                        await new Promise(r => setTimeout(r, 0));
                     }
                 } catch (e) {
                     if (e.name !== 'AbortError') console.error('流式请求失败:', e);
