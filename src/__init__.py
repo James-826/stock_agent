@@ -1,1 +1,2 @@
-﻿"""Stock Agent 源码包。"""
+# -*- coding: utf-8 -*-
+"""Stock Agent 源码包。"""

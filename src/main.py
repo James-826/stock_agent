@@ -1,4 +1,5 @@
-﻿"""Stock Agent 入口文件。
+# -*- coding: utf-8 -*-
+"""Stock Agent 入口文件。
 
 运行方式：
     cd 05-stock-agent

@@ -1,4 +1,5 @@
-﻿"""models 包的初始化文件。
+# -*- coding: utf-8 -*-
+"""models 包的初始化文件。
 
 作用：让其他模块可以这样导入：
   from ..models import QuoteResult, AgentError, ERROR_DEFINITIONS

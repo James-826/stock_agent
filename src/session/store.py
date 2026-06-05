@@ -1,4 +1,5 @@
-﻿"""Session 持久化：对话历史保存到 JSONL 文件。
+# -*- coding: utf-8 -*-
+"""Session 持久化：对话历史保存到 JSONL 文件。
 
 Phase 3 学的 Session 机制：
   - JSONL 格式：每行一个 JSON 对象

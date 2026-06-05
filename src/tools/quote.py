@@ -1,4 +1,5 @@
-﻿"""get_quote 工具：查询股票实时价格。
+# -*- coding: utf-8 -*-
+"""get_quote 工具：查询股票实时价格。
 
 数据来源：yfinance（雅虎财经 Python 库）
 返回值：QuoteResult 或 AgentError
