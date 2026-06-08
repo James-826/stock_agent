@@ -1,0 +1,2 @@
+type=analyze, msg='分析英伟达', stock=NVDA, use_multi=True, multi_sys=True
+type=analyze, msg='分析英特人', stock=None, use_multi=None, multi_sys=True

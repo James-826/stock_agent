@@ -1,54 +1,56 @@
-# -*- coding: utf-8 -*-
-"""工具注册表。
+﻿# -*- coding: utf-8 -*-
+"""Tool Registry
 
-Phase 3 学的 MCP 工具注册机制：
-  - 工具要有名字、描述、参数定义
-  - 这些信息以 JSON Schema 格式传给 Claude API
-  - 模型看到工具描述后，自己决定什么时候调用哪个工具
+Phase 3 learned MCP tool registration mechanism:
+- Tools need name, description, parameters
+- These are sent to Claude API in JSON Schema format
+- Model sees tool descriptions and decides when to call which tool
 
-这里我们手动定义 JSON Schema（Step 4 先手动，后面可以改成 MCP 自动生成）。
+We manually define JSON Schema (Step 4 is manual first, can later change to MCP auto-generation)
 
-对应 oss 项目的：
-  - claude-agent.ts 里的 tools: { type: 'preset', preset: 'claude_code' }
-  - MCP 服务器返回的工具列表
+Corresponding to oss project:
+- claude-agent.ts: tools: { type: 'preset', preset: 'claude_code' }
+- MCP server returns tool list
 """
 
 from .quote import get_quote
 from .kline import get_kline
 from .valuation import get_valuation
 from .news import get_news
+from .trend_tool import analyze_stock_trend
 from ..models import AgentError
 
 import json
 
 
-# 工具名 -> 函数的映射
-# Agent Loop 解析到 tool_use 后，从这里找到对应函数执行
+# Tool name -> function mapping
+# Agent Loop parses tool_use, finds corresponding function here to execute
 TOOL_REGISTRY = {
     'stock_quote': get_quote,
     'stock_kline': get_kline,
     'stock_valuation': get_valuation,
     'stock_news': get_news,
+    'analyze_trend': analyze_stock_trend,
 }
 
-# Claude API 的 tools 参数格式（JSON Schema）
-# 这告诉模型：你有哪些工具可以用
-# 模型看到这些描述后，自己决定什么时候调用哪个
+# Claude API tools parameter format (JSON Schema)
+# This tells the model: what tools you have
+# Model sees these descriptions and decides when to call which tool
 TOOL_DEFINITIONS = [
     {
         'name': 'stock_quote',
-        'description': '查询股票实时价格和涨跌幅。使用场景：用户问\"茅台现在多少钱\"、\"AAPL今天涨了吗\"',
+        'description': 'Query real-time stock price and change. Use case: user asks "How much is NVDA now?", "Did AAPL go up today?"',
         'input_schema': {
             'type': 'object',
             'properties': {
                 'symbol': {
                     'type': 'string',
-                    'description': '股票代码，如 AAPL、600519'
+                    'description': 'Stock code, e.g. NVDA, 600519'
                 },
                 'market': {
                     'type': 'string',
                     'enum': ['US', 'CN', 'HK'],
-                    'description': '市场，默认 US'
+                    'description': 'Market, default US'
                 },
             },
             'required': ['symbol'],
@@ -56,33 +58,33 @@ TOOL_DEFINITIONS = [
     },
     {
         'name': 'stock_kline',
-        'description': '计算技术指标（MA、RSI、MACD、布林带）。使用场景：用户问\"茅台最近怎么样\"、\"AAPL的RSI是多少\"',
+        'description': 'Calculate technical indicators (MA, RSI, MACD, Bollinger Bands). Use case: user asks "How is NVDA recently?", "What is AAPL\'s RSI?"',
         'input_schema': {
             'type': 'object',
             'properties': {
                 'symbol': {
                     'type': 'string',
-                    'description': '股票代码'
+                    'description': 'Stock code'
                 },
                 'indicators': {
                     'type': 'array',
                     'items': {'type': 'string', 'enum': ['MA', 'RSI', 'MACD', 'BB']},
-                    'description': '指标列表'
+                    'description': 'Indicator list'
                 },
                 'period': {
                     'type': 'string',
                     'enum': ['1mo', '3mo', '6mo', '1y'],
-                    'description': '时间周期，默认 1mo'
+                    'description': 'Time period, default 1mo'
                 },
                 'interval': {
                     'type': 'string',
                     'enum': ['1d', '1wk', '1mo'],
-                    'description': 'K线间隔，默认 1d'
+                    'description': 'K-line interval, default 1d'
                 },
                 'market': {
                     'type': 'string',
                     'enum': ['US', 'CN', 'HK'],
-                    'description': '市场，默认 US'
+                    'description': 'Market, default US'
                 },
             },
             'required': ['symbol', 'indicators'],
@@ -90,18 +92,18 @@ TOOL_DEFINITIONS = [
     },
     {
         'name': 'stock_valuation',
-        'description': '查询估值指标（PE、PB、股息率）。使用场景：用户问\"茅台估值贵不贵\"、\"AAPL的PE是多少\"',
+        'description': 'Query valuation metrics (PE, PB, dividend yield). Use case: user asks "Is NVDA expensive?", "What is AAPL\'s PE?"',
         'input_schema': {
             'type': 'object',
             'properties': {
                 'symbol': {
                     'type': 'string',
-                    'description': '股票代码'
+                    'description': 'Stock code'
                 },
                 'market': {
                     'type': 'string',
                     'enum': ['US', 'CN', 'HK'],
-                    'description': '市场，默认 US'
+                    'description': 'Market, default US'
                 },
             },
             'required': ['symbol'],
@@ -109,26 +111,50 @@ TOOL_DEFINITIONS = [
     },
     {
         'name': 'stock_news',
-        'description': '检索股票相关新闻。使用场景：用户问\"茅台最近有什么新闻\"、\"AAPL今天为什么涨了\"',
+        'description': 'Search for stock-related news. Use case: user asks "What\'s the latest NVDA news?", "Why did AAPL go up today?"',
         'input_schema': {
             'type': 'object',
             'properties': {
                 'symbol': {
                     'type': 'string',
-                    'description': '股票代码'
+                    'description': 'Stock code'
                 },
                 'limit': {
                     'type': 'integer',
-                    'description': '返回条数，默认 5'
+                    'description': 'Number of results, default 5'
                 },
                 'days': {
                     'type': 'integer',
-                    'description': '最近 N 天，默认 7'
+                    'description': 'Last N days, default 7'
                 },
                 'market': {
                     'type': 'string',
                     'enum': ['US', 'CN', 'HK'],
-                    'description': '市场，默认 US'
+                    'description': 'Market, default US'
+                },
+            },
+            'required': ['symbol'],
+        },
+    },
+    {
+        'name': 'analyze_trend',
+        'description': 'Comprehensive trend analysis combining MA, MACD, RSI, Bollinger Bands, VIX, and valuation metrics. Returns buy/sell score (0-100). Use case: user asks "Analyze NVDA trend", "Should I buy AAPL?", "Give me a comprehensive analysis of TSLA"',
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'symbol': {
+                    'type': 'string',
+                    'description': 'Stock code, e.g. NVDA, AAPL'
+                },
+                'period': {
+                    'type': 'string',
+                    'enum': ['1mo', '3mo', '6mo', '1y'],
+                    'description': 'Time period for analysis, default 3mo'
+                },
+                'market': {
+                    'type': 'string',
+                    'enum': ['US', 'CN', 'HK'],
+                    'description': 'Market, default US'
                 },
             },
             'required': ['symbol'],
@@ -138,17 +164,17 @@ TOOL_DEFINITIONS = [
 
 
 def execute_tool(name: str, params: dict) -> str:
-    """执行工具调用，返回 JSON 字符串。
+    """Execute tool call, return JSON string.
 
-    对应 Phase 3 学的工具调用流程：
-      1. 从 TOOL_REGISTRY 找到工具函数
-      2. 传入参数执行
-      3. 如果返回 AgentError，格式化错误信息
-      4. 如果返回 Pydantic 模型，序列化为 JSON
+    Corresponding to Phase 3 tool call flow:
+      1. Find tool function from TOOL_REGISTRY
+      2. Execute with parameters
+      3. If return AgentError, format error info
+      4. If return Pydantic model, serialize to JSON
     """
     func = TOOL_REGISTRY.get(name)
     if not func:
-        return json.dumps({'error': 'UNKNOWN_TOOL', 'message': f'未知工具: {name}'})
+        return json.dumps({'error': 'UNKNOWN_TOOL', 'message': f'Unknown tool: {name}'})
 
     try:
         result = func(**params)
@@ -159,8 +185,8 @@ def execute_tool(name: str, params: dict) -> str:
                 'message': result.message,
                 'can_retry': result.can_retry,
             }, ensure_ascii=False)
-        return json.dumps(result.model_dump(), ensure_ascii=False, default=str)
+        return json.dumps(result, ensure_ascii=False, default=str)
     except TypeError as e:
-        return json.dumps({'error': 'INVALID_PARAMS', 'message': f'参数错误: {e}'})
+        return json.dumps({'error': 'INVALID_PARAMS', 'message': f'Parameter error: {e}'})
     except Exception as e:
-        return json.dumps({'error': 'EXECUTION_ERROR', 'message': f'执行失败: {e}'})
+        return json.dumps({'error': 'EXECUTION_ERROR', 'message': f'Execution failed: {e}'})
