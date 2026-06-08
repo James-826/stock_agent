@@ -496,7 +496,7 @@
                                                         <div className="flex-1 bg-slate-200 rounded-full h-2.5">
 
 
-                                                            <div className=`h-2.5 rounded-full transition-all duration-500 ${getScoreColor(result.block_scores[k] || 50)}` style={{width: (result.block_scores[k]||50)+'%'}} />
+                                                            <div className={'h-2.5 rounded-full transition-all duration-500 ' + getScoreColor(result.block_scores[k] || 50)} style={{width: (result.block_scores[k]||50)+'%'}} />
 
 
                                                         </div>
@@ -505,7 +505,7 @@
                                                         <span className="text-sm font-mono font-bold w-10 text-right">{result.block_scores[k] || '-'}</span>
 
 
-                                                        <span className=`text-xs px-2 py-0.5 rounded-full ${getSignalColor(_score_to_signal(result.block_scores[k] || 50))}`>{getSignalLabel(_score_to_signal(result.block_scores[k] || 50))}</span>
+                                                        <span className={'text-xs px-2 py-0.5 rounded-full ' + getSignalColor(_score_to_signal(result.block_scores[k] || 50))}>{getSignalLabel(_score_to_signal(result.block_scores[k] || 50))}</span>
 
 
                                                     </div>
@@ -529,7 +529,7 @@
                                                                     <div className="flex-1 bg-slate-200 rounded-full h-1.5">
 
 
-                                                                        <div className=`h-1.5 rounded-full transition-all duration-500 ${getScoreColor(sv || 50)}` style={{width: (sv||50)+'%'}} />
+                                                                        <div className={'h-1.5 rounded-full transition-all duration-500 ' + getScoreColor(sv || 50)} style={{width: (sv||50)+'%'}} />
 
 
                                                                     </div>
